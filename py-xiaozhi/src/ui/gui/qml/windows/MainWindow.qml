@@ -46,7 +46,10 @@ AppWindow {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: Theme.spacingMd
+                    anchors.topMargin: Theme.spacingMd
+                    anchors.bottomMargin: Theme.spacingMd
+                    anchors.leftMargin: Theme.spacingSm
+                    anchors.rightMargin: Theme.spacingSm
                     spacing: Theme.spacingMd
 
                     // 状态标签
@@ -73,9 +76,7 @@ AppWindow {
                         /*
                         MonkAvatar {
                             id: monkAvatar
-                            anchors.centerIn: parent
-                            width: Math.min(parent.width * 0.86, parent.height * 0.86)
-                            height: width
+                            anchors.fill: parent
                             showStatusText: true
                             videoScale: 1.0
                         }
@@ -84,9 +85,7 @@ AppWindow {
                         /*
                         MileHologram {
                             id: mileHologram
-                            anchors.centerIn: parent
-                            width: Math.min(parent.width * 0.86, parent.height * 0.86)
-                            height: width
+                            anchors.fill: parent
                             showStatusText: true
                             videoScale: 1.0
                         }
@@ -95,9 +94,7 @@ AppWindow {
                         
                         PusaHologram {
                             id: pusaHologram
-                            anchors.centerIn: parent
-                            width: Math.min(parent.width * 0.86, parent.height * 0.86)
-                            height: width
+                            anchors.fill: parent
                             showStatusText: true
                             videoScale: 1.0
                         }
@@ -106,9 +103,7 @@ AppWindow {
                         /*
                         XiaoShaMiHologram {
                             id: xiaoShaMiHologram
-                            anchors.centerIn: parent
-                            width: Math.min(parent.width * 0.86, parent.height * 0.86)
-                            height: width
+                            anchors.fill: parent
                             showStatusText: true
                             videoScale: 1.0
                         }

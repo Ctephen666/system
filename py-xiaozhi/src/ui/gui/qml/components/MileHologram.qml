@@ -80,8 +80,8 @@ Item {
         VideoOutput {
             id: videoOutput
             anchors.centerIn: parent
-            width: Math.min(parent.width, parent.height) * root.videoScale
-            height: width
+            width: parent.width * root.videoScale
+            height: parent.height * root.videoScale
             fillMode: VideoOutput.PreserveAspectFit
             antialiasing: true
         }
