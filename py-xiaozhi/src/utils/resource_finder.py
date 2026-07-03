@@ -234,17 +234,16 @@ def get_user_keywords_path(lang: str) -> Path:
     import shutil
 
     project_keywords = get_app_root() / "models" / lang / "keywords.txt"
-    if project_keywords.exists():
-        return project_keywords
-
     user_keywords_dir = get_user_data_dir() / "keywords"
-    user_keywords = user_keywords_dir / f"{lang}_keywords.txt"
+    user_keywords = user_keywords_dir / lang / "keywords.txt"
+    legacy_user_keywords = user_keywords_dir / f"{lang}_keywords.txt"
 
     if not user_keywords.exists():
         # 从安装目录复制默认文件
-        default_keywords = project_keywords
-        if default_keywords.exists():
-            user_keywords_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(default_keywords, user_keywords)
+        user_keywords.parent.mkdir(parents=True, exist_ok=True)
+        if legacy_user_keywords.exists():
+            shutil.copy2(legacy_user_keywords, user_keywords)
+        elif project_keywords.exists():
+            shutil.copy2(project_keywords, user_keywords)
 
     return user_keywords

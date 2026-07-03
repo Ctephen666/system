@@ -45,7 +45,12 @@ class ConfigManager:
             "KEYWORDS_THRESHOLD": 0.2,
             "NUM_TRAILING_BLANKS": 1,
             "WAKE_WORD": "你好小智",
-            "WAKE_WORD_LANG": "zh"
+            "WAKE_WORD_LANG": "zh",
+            "WAKE_RESPONSE_TTS_ENABLED": True,
+            "WAKE_RESPONSE_TTS_MODE": "server",
+            "WAKE_RESPONSE_TTS_LOCAL_FALLBACK": True,
+            "WAKE_RESPONSE_TTS_TIMEOUT": 8.0,
+            "WAKE_RESPONSE_TEXT": "我在我在",
         },
         "CAMERA": {
             "camera_index": 0,

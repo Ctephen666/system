@@ -15,11 +15,17 @@ from PySide6.QtCore import Property, Signal, Slot
 from src.audio_processing.keyword_converters import convert_wake_word
 from src.logging import get_logger
 from src.utils.config_manager import ConfigManager
-from src.utils.resource_finder import get_user_data_dir
+from src.utils.resource_finder import get_user_data_dir, get_user_keywords_path
 
 from .base_model import BaseModel
 
 logger = get_logger()
+
+
+def _wake_log(event: str, **fields) -> str:
+    parts = [f"事件={event}"]
+    parts.extend(f"{key}={value}" for key, value in fields.items() if value is not None)
+    return "[WakeWord] " + " | ".join(parts)
 
 
 class SettingsModel(BaseModel):
@@ -435,7 +441,17 @@ class SettingsModel(BaseModel):
 
         try:
             # 转换唤醒词
+            logger.info(_wake_log("保存请求", 来源="前端设置", 唤醒词=self._wake_word))
             keyword_line, lang, model_path = convert_wake_word(self._wake_word)
+            logger.info(
+                _wake_log(
+                    "关键词转换完成",
+                    唤醒词=self._wake_word,
+                    语言=lang,
+                    模型路径=model_path,
+                    关键词行=keyword_line,
+                )
+            )
 
             # 更新配置
             self._set_value("WAKE_WORD_OPTIONS.WAKE_WORD", self._wake_word)
@@ -443,16 +459,20 @@ class SettingsModel(BaseModel):
             self._set_value("WAKE_WORD_OPTIONS.MODEL_PATH", model_path)
 
             # 写入 keywords.txt 到用户数据目录
-            from src.utils.resource_finder import get_user_data_dir
+            keywords_path = get_user_keywords_path(lang)
+            logger.info(_wake_log("关键词文件", 类型="用户配置", 路径=keywords_path))
+            keywords_path.parent.mkdir(parents=True, exist_ok=True)
+            backup_path = keywords_path.with_suffix(keywords_path.suffix + ".bak")
+            if keywords_path.exists():
+                backup_tmp_path = backup_path.with_suffix(backup_path.suffix + ".tmp")
+                backup_tmp_path.write_bytes(keywords_path.read_bytes())
+                backup_tmp_path.replace(backup_path)
+            tmp_path = keywords_path.with_suffix(keywords_path.suffix + ".tmp")
+            tmp_path.write_text(keyword_line + "\n", encoding="utf-8")
+            tmp_path.replace(keywords_path)
+            logger.info(_wake_log("关键词文件写入完成", 路径=keywords_path))
 
-            keywords_dir = get_user_data_dir() / "keywords"
-            keywords_dir.mkdir(parents=True, exist_ok=True)
-            keywords_path = keywords_dir / f"{lang}_keywords.txt"
-
-            with open(keywords_path, "w", encoding="utf-8") as f:
-                f.write(keyword_line + "\n")
-
-            logger.info(f"唤醒词已保存: {self._wake_word} -> {keywords_path}")
+            logger.info(_wake_log("保存完成", 唤醒词=self._wake_word, 路径=keywords_path))
             self.statusMessage.emit(f"唤醒词已保存 ({lang.upper()})")
 
             # 保存到文件
@@ -460,7 +480,7 @@ class SettingsModel(BaseModel):
             return True
 
         except Exception as e:
-            logger.error(f"保存唤醒词失败: {e}", exc_info=True)
+            logger.error(_wake_log("保存失败", 唤醒词=self._wake_word, 错误=e), exc_info=True)
             self.statusMessage.emit(f"保存失败: {e}")
             return False
 

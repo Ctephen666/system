@@ -124,6 +124,18 @@ class Protocol:
         }
         await self.send_text(json.dumps(message))
 
+    async def send_tts_speak(self, text: str):
+        """
+        请求服务端使用当前配置音色直接播报文本.
+        """
+        message = {
+            "session_id": self.session_id,
+            "type": "tts",
+            "state": "speak",
+            "text": text,
+        }
+        await self.send_text(json.dumps(message))
+
     async def send_start_listening(self, mode):
         """
         发送开始监听的消息.

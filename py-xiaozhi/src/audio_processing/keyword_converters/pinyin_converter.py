@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import re
+from pathlib import Path
 from typing import List
 
 from .base import KeywordConverter
@@ -61,7 +62,16 @@ class PinyinConverter(KeywordConverter):
 
         return [pinyin]
 
-    def convert(self, text: str) -> str:
+    def _load_tokens(self, tokens_path: str | Path) -> set[str]:
+        tokens = set()
+        with open(tokens_path, encoding="utf-8") as f:
+            for line in f:
+                parts = line.strip().split()
+                if parts:
+                    tokens.add(parts[0])
+        return tokens
+
+    def convert(self, text: str, tokens_path: str | Path | None = None) -> str:
         self._ensure_pypinyin()
 
         pinyin_list = self._pypinyin(text, style=self._style)
@@ -70,6 +80,17 @@ class PinyinConverter(KeywordConverter):
         for pinyin in pinyin_list:
             parts = self._split_pinyin(pinyin)
             split_parts.extend(parts)
+
+        if tokens_path is not None:
+            valid_tokens = self._load_tokens(tokens_path)
+            for pinyin in pinyin_list:
+                parts = self._split_pinyin(pinyin)
+                missing = [part for part in parts if part not in valid_tokens]
+                if missing:
+                    raise ValueError(
+                        f"“{text}” 中的拼音 “{pinyin}” 无法映射到 tokens.txt: "
+                        + ", ".join(missing)
+                    )
 
         pinyin_str = " ".join(split_parts)
         return f"{pinyin_str} @{text}"

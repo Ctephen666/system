@@ -87,6 +87,9 @@ class PluginCommandsAdapter:
     async def send_wake_word_detected(self, text: str) -> None:
         await self._container.protocol.send_wake_word_detected(text)
 
+    async def send_tts_speak(self, text: str) -> None:
+        await self._container.protocol.send_tts_speak(text)
+
     async def send_mcp_message(self, payload: str) -> None:
         await self._container.protocol.send_mcp_message(payload)
 

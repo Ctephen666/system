@@ -1,6 +1,7 @@
 import asyncio
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -14,6 +15,12 @@ from src.utils.resource_finder import get_app_root, get_user_keywords_path
 logger = get_logger()
 
 _STOP_SENTINEL = object()
+
+
+def _wake_log(event: str, **fields) -> str:
+    parts = [f"事件={event}"]
+    parts.extend(f"{key}={value}" for key, value in fields.items() if value is not None)
+    return "[WakeWord] " + " | ".join(parts)
 
 
 class WakeWordDetector:
@@ -54,7 +61,7 @@ class WakeWordDetector:
             # 1. 检查配置是否启用
             config = ConfigManager.get_instance()
             if not config.get_config("WAKE_WORD_OPTIONS.USE_WAKE_WORD", False):
-                logger.info("唤醒词功能已禁用")
+                logger.info(_wake_log("检测器初始化跳过", 原因="唤醒词功能已禁用"))
                 self.enabled = False
                 return False
 
@@ -84,11 +91,11 @@ class WakeWordDetector:
 
             self.enabled = True
             self._model_loaded = True
-            logger.info(f"唤醒词检测器初始化成功: {self._model_dir}")
+            logger.info(_wake_log("检测器初始化完成", 模型目录=self._model_dir))
             return True
 
         except Exception as e:
-            logger.error(f"唤醒词检测器初始化失败: {e}", exc_info=True)
+            logger.error(_wake_log("检测器初始化异常", 错误=e), exc_info=True)
             self.enabled = False
             return False
 
@@ -123,19 +130,22 @@ class WakeWordDetector:
 
             lang = ConfigManager.get_instance().get_config("WAKE_WORD_OPTIONS.WAKE_WORD_LANG", "zh")
             keywords_path = get_user_keywords_path(lang)
+            logger.info(_wake_log("关键词文件", 类型="用户配置", 路径=keywords_path))
 
             required_files = [encoder_path, decoder_path, joiner_path, tokens_path, keywords_path]
             for file_path in required_files:
                 if not file_path.exists():
-                    logger.error(f"模型文件不存在: {file_path}")
+                    logger.error(_wake_log("模型文件缺失", 路径=file_path))
                     return False
 
             # Windows: sherpa-onnx C++ 用 std::ifstream(narrow_char*) 读取 tokens.txt，
             # 路径含非 ASCII 字符时 GBK 代码页会吞掉反斜杠导致打开失败。
-            # 将 tokens.txt 复制到 ASCII 安全路径的用户目录下。
+            # 将 tokens.txt/keywords.txt 转换到 ASCII 安全路径后再交给 sherpa-onnx。
             tokens_path = self._ensure_ascii_path(tokens_path, lang)
+            keywords_path = self._ensure_ascii_path(keywords_path, lang)
+            logger.info(_wake_log("关键词文件", 类型="KeywordSpotter实际读取", 路径=keywords_path))
 
-            logger.info(f"加载 KeywordSpotter 模型: {self._model_dir}")
+            logger.info(_wake_log("模型加载开始", 模型目录=self._model_dir))
 
             with self._onnx_lock:
                 self._keyword_spotter = sherpa_onnx.KeywordSpotter(
@@ -154,7 +164,7 @@ class WakeWordDetector:
                     provider=self._provider,
                 )
 
-            logger.info("KeywordSpotter 模型加载成功")
+            logger.info(_wake_log("模型加载完成", 结果="成功"))
             return True
 
         except ImportError as e:
@@ -168,7 +178,8 @@ class WakeWordDetector:
     def _ensure_ascii_path(file_path: Path, lang: str) -> Path:
         """On Windows, copy file to an ASCII-safe path if needed.
 
-        sherpa-onnx reads tokens.txt via std::ifstream with narrow char paths.
+        sherpa-onnx reads tokens.txt/keywords.txt via std::ifstream with
+        narrow char paths.
         Under GBK code page, UTF-8 encoded non-ASCII directory names corrupt
         the path (certain trailing bytes consume the backslash separator).
         """
@@ -180,13 +191,72 @@ class WakeWordDetector:
         if str(file_path).isascii():
             return file_path
 
+        short_path = WakeWordDetector._get_windows_short_path(file_path)
+        if short_path and short_path.isascii():
+            logger.debug(f"使用 Windows 短路径加载 {file_path.name}: {short_path}")
+            return Path(short_path)
+
         import shutil
 
-        safe_dir = get_user_keywords_path(lang).parent
+        safe_dir = WakeWordDetector._get_ascii_cache_dir(lang)
         safe_path = safe_dir / file_path.name
         shutil.copy2(file_path, safe_path)
-        logger.debug(f"已复制 {file_path.name} 到 ASCII 安全路径: {safe_path}")
+        logger.info(_wake_log("ASCII路径复制", 文件=file_path.name, 路径=safe_path))
         return safe_path
+
+    @staticmethod
+    def _get_windows_short_path(file_path: Path) -> Optional[str]:
+        """Return an ASCII 8.3 path if Windows has short names enabled."""
+        try:
+            import ctypes
+
+            path = str(file_path)
+            size = ctypes.windll.kernel32.GetShortPathNameW(path, None, 0)
+            if size == 0:
+                return None
+
+            buffer = ctypes.create_unicode_buffer(size)
+            result = ctypes.windll.kernel32.GetShortPathNameW(path, buffer, size)
+            if result == 0:
+                return None
+
+            return buffer.value
+        except Exception:
+            return None
+
+    @staticmethod
+    def _get_ascii_cache_dir(lang: str) -> Path:
+        """Choose a writable ASCII-only cache dir for sherpa-onnx file inputs."""
+        import os
+
+        candidates = []
+        override = os.environ.get("PY_XIAOZHI_ASCII_CACHE")
+        if override:
+            candidates.append(Path(override))
+
+        public_dir = os.environ.get("PUBLIC")
+        if public_dir:
+            candidates.append(Path(public_dir) / "py-xiaozhi" / "kws")
+
+        program_data = os.environ.get("ProgramData")
+        if program_data:
+            candidates.append(Path(program_data) / "py-xiaozhi" / "kws")
+
+        app_root = get_app_root()
+        if str(app_root).isascii():
+            candidates.append(app_root / ".runtime" / "kws")
+
+        for root in candidates:
+            safe_dir = root / lang
+            if not str(safe_dir).isascii():
+                continue
+            try:
+                safe_dir.mkdir(parents=True, exist_ok=True)
+                return safe_dir
+            except Exception as e:
+                logger.debug(_wake_log("ASCII缓存目录不可用", 路径=safe_dir, 错误=e))
+
+        raise RuntimeError("未找到可写的 ASCII 安全路径用于加载唤醒词模型文件")
 
     def _release_model(self):
         if not self._model_loaded:
@@ -236,7 +306,7 @@ class WakeWordDetector:
 
     async def start(self, audio_codec) -> bool:
         if not self.enabled:
-            logger.warning("唤醒词功能未启用")
+            logger.warning(_wake_log("检测器启动跳过", 原因="唤醒词功能未启用"))
             return False
 
         if not self._keyword_spotter:
@@ -260,7 +330,7 @@ class WakeWordDetector:
             # Start detection task
             self._detection_task = asyncio.create_task(self._detection_loop())
 
-            logger.info("唤醒词检测器已启动")
+            logger.info(_wake_log("检测器启动完成"))
             return True
 
         except Exception as e:
@@ -309,13 +379,13 @@ class WakeWordDetector:
             self._audio_queue = None
 
         self._stopping = False
-        logger.info("唤醒词检测器已停止")
+        logger.info(_wake_log("检测器已停止"))
 
     async def reload(self, model_path: Optional[str] = None) -> bool:
         was_running = self._running
         codec = self.audio_codec
 
-        logger.info(f"热重载唤醒词模型: {model_path}")
+        logger.info(_wake_log("模型热重载开始", 模型路径=model_path))
 
         # Re-initialize with new model
         if not await self.initialize(model_path):
@@ -332,7 +402,7 @@ class WakeWordDetector:
         await self.stop()
         self._release_model()
         self.enabled = False
-        logger.info("唤醒词检测器已关闭")
+        logger.info(_wake_log("检测器已关闭"))
 
     def pause(self):
         """Pause detection (keeps model loaded)."""
@@ -431,9 +501,19 @@ class WakeWordDetector:
         # Anti-repeat check
         current_time = time.time()
         if current_time - self._last_detection_time < self._detection_cooldown:
+            logger.info(
+                _wake_log(
+                    "重复触发已忽略",
+                    原始结果=result,
+                    冷却时间=f"{self._detection_cooldown}s",
+                    时间=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                )
+            )
             return
 
         self._last_detection_time = current_time
+        wake_word = self._extract_wake_word(result)
+        logger.debug(_wake_log("检测器命中", 唤醒词=wake_word, 原始结果=result))
 
         # 短暂暂停检测，让打断流程完成，避免旧音频触发重复检测
         self._paused = True
@@ -441,11 +521,11 @@ class WakeWordDetector:
             if self.on_detected_callback:
                 try:
                     if asyncio.iscoroutinefunction(self.on_detected_callback):
-                        await self.on_detected_callback(result, result)
+                        await self.on_detected_callback(wake_word, result)
                     else:
-                        self.on_detected_callback(result, result)
+                        self.on_detected_callback(wake_word, result)
                 except Exception as e:
-                    logger.error(f"唤醒词回调执行失败: {e}")
+                    logger.error(_wake_log("检测回调执行失败", 错误=e))
         finally:
             # 快速退出：正在停止时跳过延迟和队列清理
             if self._stopping:
@@ -461,3 +541,13 @@ class WakeWordDetector:
                     except asyncio.QueueEmpty:
                         break
             self._paused = False
+
+    @staticmethod
+    def _extract_wake_word(result) -> str:
+        """Extract the original wake word text from a keywords.txt result."""
+        text = str(result).strip()
+        if "@" in text:
+            wake_word = text.rsplit("@", 1)[1].strip()
+            if wake_word:
+                return wake_word
+        return text

@@ -34,6 +34,9 @@ class Events:
     AUDIO_CHANNEL_OPENED = "audio_channel_opened"
     AUDIO_CHANNEL_CLOSED = "audio_channel_closed"
 
+    # 唤醒词事件
+    WAKE_WORD_DETECTED = "wake_word_detected"
+
     # 应用生命周期
     APP_SHUTDOWN = "app_shutdown"
 

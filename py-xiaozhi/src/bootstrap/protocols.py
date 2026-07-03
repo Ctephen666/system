@@ -112,6 +112,12 @@ class PluginCommands(Protocol):
         """
         ...
 
+    async def send_tts_speak(self, text: str) -> None:
+        """
+        请求服务端使用当前配置音色直接播报文本.
+        """
+        ...
+
     async def send_mcp_message(self, payload: str) -> None:
         """
         发送 MCP 消息（会自动包装格式）.

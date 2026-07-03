@@ -68,6 +68,7 @@ class UIPlugin(Plugin):
         self._ctx.event_bus.on(Events.NETWORK_ERROR, self._on_network_error)
         self._ctx.event_bus.on(Events.MUSIC_STATE_CHANGED, self._on_music_state_changed)
         self._ctx.event_bus.on(Events.MUSIC_LYRICS_UPDATE, self._on_music_lyrics_update)
+        self._ctx.event_bus.on(Events.WAKE_WORD_DETECTED, self._on_wake_word_detected)
         logger.info("UIPlugin 已订阅音乐事件")
 
         # 订阅用户操作事件（从 View 发出）
@@ -143,6 +144,19 @@ class UIPlugin(Plugin):
                 self.view_manager.main_model.set_status("未连接", connected=False)
             else:
                 self.view_manager.set_status("未连接", connected=False)
+
+    async def _on_wake_word_detected(self, data) -> None:
+        """记录唤醒词事件，供 CLI/GUI 日志面板后台查看。"""
+        if not isinstance(data, dict):
+            return
+        logger.debug(
+            "[WakeWord] 事件=UI收到唤醒事件 | "
+            f"唤醒词={data.get('wake_word')} | "
+            f"原始结果={data.get('full_text')} | "
+            f"当前状态={data.get('device_state')} | "
+            f"后续动作={data.get('action')} | "
+            f"时间={data.get('timestamp')}"
+        )
 
     def register_resources(self, pool) -> None:
         view_manager = self.view_manager

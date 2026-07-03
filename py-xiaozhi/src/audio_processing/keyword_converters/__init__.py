@@ -13,6 +13,7 @@ __all__ = [
     "detect_language",
     "get_converter",
     "convert_wake_word",
+    "wake_word_text_to_keyword_line",
 ]
 
 # Singleton converters
@@ -53,8 +54,23 @@ def get_converter(language: str) -> KeywordConverter:
         raise ValueError(f"Unsupported language: {language}")
 
 
+def wake_word_text_to_keyword_line(text: str, tokens_path: str) -> str:
+    """Convert Chinese text to the current keywords.txt line format.
+
+    Output format: "token token token @原始唤醒词".
+    """
+    converter = _get_pinyin_converter()
+    return converter.convert(text, tokens_path=tokens_path)
+
+
 def convert_wake_word(text: str) -> Tuple[str, str, str]:
     language = detect_language(text)
     converter = get_converter(language)
-    keyword_line = converter.convert(text)
+    if language == "zh":
+        from src.utils.resource_finder import get_app_root
+
+        tokens_path = get_app_root() / converter.model_path / "tokens.txt"
+        keyword_line = converter.convert(text, tokens_path=tokens_path)
+    else:
+        keyword_line = converter.convert(text)
     return keyword_line, language, converter.model_path

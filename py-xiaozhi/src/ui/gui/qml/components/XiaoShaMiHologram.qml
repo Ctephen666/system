@@ -29,7 +29,7 @@ Item {
 
     width: 420
     height: 420
-
+0
     property bool showStatusText: true
     property bool autoPlay: true
     property bool muted: true

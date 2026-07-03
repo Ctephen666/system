@@ -171,6 +171,11 @@ class ProtocolGateway:
         if protocol:
             await protocol.send_wake_word_detected(wake_word)
 
+    async def send_tts_speak(self, text: str) -> None:
+        protocol = self._transport.protocol
+        if protocol:
+            await protocol.send_tts_speak(text)
+
     async def send_iot_descriptors(self, descriptors) -> None:
         protocol = self._transport.protocol
         if protocol:
@@ -230,6 +235,9 @@ class ProtocolManager:
 
     async def send_wake_word_detected(self, wake_word: str) -> None:
         await self._gateway.send_wake_word_detected(wake_word)
+
+    async def send_tts_speak(self, text: str) -> None:
+        await self._gateway.send_tts_speak(text)
 
     async def send_iot_descriptors(self, descriptors) -> None:
         await self._gateway.send_iot_descriptors(descriptors)
