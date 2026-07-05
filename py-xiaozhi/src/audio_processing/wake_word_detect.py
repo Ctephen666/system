@@ -489,6 +489,9 @@ class WakeWordDetector:
                     result = self._keyword_spotter.get_result(self._stream)
 
                     if result:
+                        logger.info(
+                            f"[WakeWordDetector] KeywordSpotter 原始结果: {result}"
+                        )
                         detected_result = result
                         self._keyword_spotter.reset_stream(self._stream)
             except Exception as e:

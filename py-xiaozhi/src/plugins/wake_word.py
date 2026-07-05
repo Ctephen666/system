@@ -31,6 +31,7 @@ class WakeWordPlugin(Plugin):
     def __init__(self) -> None:
         super().__init__()
         self.detector = None
+        self._wake_ack_waiting = False
 
     @property
     def _audio_plugin(self):
@@ -150,6 +151,14 @@ class WakeWordPlugin(Plugin):
         """
         try:
             state = self._ctx.get_device_state()
+            logger.info(
+                _wake_log(
+                    "进入_on_detected",
+                    wake_word=wake_word,
+                    full_text=full_text,
+                    state=self._format_state(state),
+                )
+            )
             if self._ctx.is_speaking():
                 action = "当前正在说话，执行打断"
                 await self._publish_wake_word_info(wake_word, full_text, state, action)
@@ -157,14 +166,39 @@ class WakeWordPlugin(Plugin):
                 if self._audio_plugin and self._audio_plugin.codec:
                     await self._audio_plugin.codec.clear_audio_queue()
             else:
-                action = "播放唤醒反馈并进入监听"
+                action = "播放唤醒音频并进入监听"
                 await self._publish_wake_word_info(wake_word, full_text, state, action)
 
-                # 服务端 TTS 需要先建立协议通道，音色由服务端/后台配置决定。
+                ack_config = self._get_wake_ack_config()
+                logger.info(_wake_log("唤醒反馈模式", 模式=ack_config["mode"]))
+                if not ack_config["enabled"]:
+                    logger.info(_wake_log("唤醒反馈跳过", 原因="配置未启用"))
+                elif ack_config["mode"] == "local_audio_file":
+                    await self._play_wake_ack_audio_file_and_wait(
+                        ack_config["audio_path"],
+                        ack_config["text"],
+                    )
+
+                logger.info(_wake_log("准备连接协议"))
                 connected = await self._cmd.connect_protocol()
+                logger.info(_wake_log("协议连接完成", opened=connected))
                 if not connected:
                     return
-                await self._show_wake_ack(connected=connected)
+
+                if ack_config["enabled"] and ack_config["mode"] == "remote_tts":
+                    await self._send_remote_wake_ack_and_wait(
+                        ack_config["text"],
+                        ack_config["request_text"],
+                        ack_config["start_timeout"],
+                        ack_config["stop_timeout"],
+                    )
+                elif ack_config["enabled"] and ack_config["mode"] == "ui_only":
+                    logger.info(_wake_log("准备发送 listen/detect", wake_word=wake_word))
+                    await self._cmd.send_wake_word_detected(str(wake_word))
+                    logger.info(_wake_log("listen/detect 已发送", 协议="listen/detect", 唤醒词=wake_word))
+                    logger.info(_wake_log("唤醒上报已发送", 协议="listen/detect", 唤醒词=wake_word))
+                    logger.warning(_wake_log("服务端不支持主动 TTS，已降级为 UI 提示"))
+                    await self._show_wake_ui_feedback(ack_config["text"])
 
                 # 启动自动对话
                 from src.constants.constants import ListeningMode
@@ -174,6 +208,7 @@ class WakeWordPlugin(Plugin):
                     if self._ctx.get_config().get_config("AEC_OPTIONS.ENABLED", True)
                     else ListeningMode.AUTO_STOP
                 )
+                logger.info(_wake_log("进入监听", 模式=mode.value))
                 await self._cmd.start_listening(mode)
         except Exception as e:
             logger.error(_wake_log("检测回调异常", 错误=e), exc_info=True)
@@ -205,7 +240,7 @@ class WakeWordPlugin(Plugin):
         """按固定格式输出唤醒词后台识别信息。"""
         logger.info(
             _wake_log(
-                "检测成功",
+                "唤醒词检测成功",
                 唤醒词=info["wake_word"],
                 原始结果=info["full_text"],
                 当前状态=info["device_state"],
@@ -214,71 +249,196 @@ class WakeWordPlugin(Plugin):
             )
         )
 
-    async def _show_wake_ack(self, connected: bool = False) -> None:
-        """
-        播放/显示唤醒反馈。
-
-        默认走服务端 TTS，使音色与用户在服务端/后台配置保持一致。
-        本地 TTS 只作为显式配置的 fallback，不阻塞后续监听流程。
-        """
+    def _get_wake_ack_config(self) -> dict:
         config = self._ctx.get_config()
-        ack_text = config.get_config(
-            "WAKE_WORD_OPTIONS.WAKE_RESPONSE_TEXT", "我在我在"
+        enabled = bool(
+            config.get_config(
+                "WAKE_WORD_OPTIONS.WAKE_ACK_ENABLED",
+                config.get_config("WAKE_WORD_OPTIONS.WAKE_RESPONSE_TTS_ENABLED", True),
+            )
         )
+        text = config.get_config(
+            "WAKE_WORD_OPTIONS.WAKE_ACK_TEXT",
+            config.get_config("WAKE_WORD_OPTIONS.WAKE_RESPONSE_TEXT", "老衲在此"),
+        )
+        migrated_old_ack_text = str(text).strip() == "我在我在"
+        if migrated_old_ack_text:
+            text = "老衲在此"
+        mode = str(
+            config.get_config(
+                "WAKE_WORD_OPTIONS.WAKE_ACK_MODE",
+                config.get_config("WAKE_WORD_OPTIONS.WAKE_RESPONSE_MODE", "remote_tts"),
+            )
+        ).lower()
+        if mode in ("local_audio", "local_tts"):
+            logger.warning(_wake_log("本地TTS方案已移除，唤醒反馈改用音频文件", 原模式=mode))
+            mode = "local_audio_file"
+        if mode in ("remote_tts", "server_tts"):
+            logger.warning(_wake_log("唤醒反馈改用音频文件", 原模式=mode))
+            mode = "local_audio_file"
+        mode_map = {
+            "local_audio_file": "local_audio_file",
+            "audio_file": "local_audio_file",
+            "server_tts": "remote_tts",
+            "remote_tts": "remote_tts",
+            "ui_only": "ui_only",
+        }
+        if mode not in mode_map:
+            logger.warning(_wake_log("唤醒反馈模式无效", 配置值=mode, 降级="ui_only"))
+            mode = "ui_only"
+
+        start_timeout = float(
+            config.get_config("WAKE_WORD_OPTIONS.WAKE_ACK_TTS_START_TIMEOUT", 5.0)
+        )
+        stop_timeout = float(
+            config.get_config(
+                "WAKE_WORD_OPTIONS.WAKE_ACK_TTS_STOP_TIMEOUT",
+                config.get_config("WAKE_WORD_OPTIONS.WAKE_RESPONSE_TTS_TIMEOUT", 3.0),
+            )
+        )
+        return {
+            "enabled": enabled,
+            "text": text,
+            "request_text": self._get_wake_ack_request_text(str(text)),
+            "audio_path": config.get_config(
+                "WAKE_WORD_OPTIONS.WAKE_ACK_AUDIO_PATH",
+                "老衲在此.wav",
+            ),
+            "mode": mode_map[mode],
+            "start_timeout": min(max(start_timeout, 3.0), 8.0),
+            "stop_timeout": min(max(stop_timeout, 8.0), 10.0),
+        }
+
+    def _get_wake_ack_request_text(self, ack_text: str) -> str:
+        config = self._ctx.get_config()
+        default_request = "请你只说老衲在此这四个字"
+        request_text = config.get_config(
+            "WAKE_WORD_OPTIONS.WAKE_ACK_REMOTE_REQUEST_TEXT",
+            default_request,
+        )
+        if "我在我在" in str(request_text) or "老衲在此" in str(request_text):
+            request_text = default_request
+        return str(request_text or default_request)
+
+    async def _show_wake_ui_feedback(self, ack_text: str) -> None:
         if not ack_text:
             return
 
-        logger.info(_wake_log("唤醒反馈", 内容=ack_text))
-        tts_enabled = config.get_config(
-            "WAKE_WORD_OPTIONS.WAKE_RESPONSE_TTS_ENABLED", True
-        )
-        tts_mode = str(
-            config.get_config("WAKE_WORD_OPTIONS.WAKE_RESPONSE_TTS_MODE", "server")
-        ).lower()
-        if tts_mode != "server":
-            logger.warning(
-                _wake_log("唤醒反馈配置调整", 原模式=tts_mode, 新模式="server", 原因="要求音色与对话一致")
-            )
-            tts_mode = "server"
-        tts_timeout = float(
-            config.get_config("WAKE_WORD_OPTIONS.WAKE_RESPONSE_TTS_TIMEOUT", 8.0)
-        )
-        configured_fallback = config.get_config(
-            "WAKE_WORD_OPTIONS.WAKE_RESPONSE_TTS_LOCAL_FALLBACK", True
-        )
-        if not configured_fallback:
-            logger.warning(_wake_log("唤醒反馈配置调整", 配置项="本地兜底", 新值=True, 原因="避免服务端不支持 tts/speak 时静默"))
-        local_fallback = True
-
-        if tts_enabled and tts_mode == "server":
-            if connected:
-                await self._send_server_wake_ack_and_wait(
-                    ack_text, tts_timeout, local_fallback
-                )
-            else:
-                logger.warning(_wake_log("唤醒反馈失败", 模式="server", 原因="协议未连接"))
-                if local_fallback:
-                    await self._play_local_wake_ack_and_wait(ack_text)
-        elif tts_enabled and tts_mode == "local":
-            self._start_local_wake_ack(ack_text)
-
+        logger.info(_wake_log("UI反馈", 内容=ack_text))
         try:
             from src.core.event_bus import Events
 
             await self._ctx.event_bus.emit(Events.UI_UPDATE_TEXT, ack_text)
         except Exception as e:
-            logger.debug(_wake_log("UI提示失败", 错误=e))
+            logger.debug(_wake_log("UI反馈失败", 错误=e))
 
-    async def _send_server_wake_ack_and_wait(
-        self, ack_text: str, timeout: float, local_fallback: bool
+    async def _play_wake_ack_audio_file_and_wait(
+        self, audio_path_config: str, ack_text: str
     ) -> None:
-        """
-        Request server-side TTS for the wake acknowledgement and wait until it ends.
+        await self._show_wake_ui_feedback(ack_text)
 
-        Server-side TTS is the only path that uses the same voice as normal
-        conversation. If the server does not return a tts stop event, continue
-        after timeout to avoid blocking wake-up forever.
-        """
+        path = self._resolve_wake_ack_audio_path(audio_path_config)
+        if not path:
+            logger.warning(_wake_log("唤醒音频文件不存在", 配置=audio_path_config))
+            return
+
+        if not self._audio_plugin or not self._audio_plugin.codec:
+            logger.warning(_wake_log("唤醒音频播放失败", 原因="audio_codec未初始化", 路径=path))
+            return
+
+        try:
+            audio, sample_rate = await asyncio.to_thread(self._load_wav_as_output_pcm, path)
+            duration = len(audio) / sample_rate if sample_rate else 0.0
+            codec = self._audio_plugin.codec
+
+            await codec.clear_audio_queue()
+            logger.info(_wake_log("唤醒音频开始播放", 路径=path, 时长=f"{duration:.2f}s"))
+
+            frame_size = max(1, int(sample_rate * 0.02))
+            for start in range(0, len(audio), frame_size):
+                await codec.write_pcm_direct(audio[start : start + frame_size])
+
+            await asyncio.sleep(min(max(duration + 0.15, 0.3), 5.0))
+            logger.info(_wake_log("唤醒音频播放完成", 路径=path))
+        except Exception as e:
+            logger.warning(_wake_log("唤醒音频播放异常", 路径=path, 错误=e), exc_info=True)
+            await self._show_wake_ui_feedback(ack_text)
+
+    def _resolve_wake_ack_audio_path(self, audio_path_config: str):
+        from pathlib import Path
+
+        from src.utils.resource_finder import get_assets_dir
+
+        configured = Path(str(audio_path_config or "老衲在此.wav"))
+        candidates = []
+        if configured.is_absolute():
+            candidates.append(configured)
+        else:
+            assets_dir = get_assets_dir()
+            candidates.extend(
+                [
+                    assets_dir / configured,
+                    assets_dir / configured.name,
+                    assets_dir / "老衲在此.wav",
+                    assets_dir / "老衲在此.WAV",
+                ]
+            )
+
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+        assets_dir = get_assets_dir()
+        stem = configured.stem.lower()
+        for candidate in assets_dir.glob("*"):
+            if candidate.is_file() and candidate.stem.lower() == stem and candidate.suffix.lower() == ".wav":
+                return candidate
+
+        return None
+
+    def _load_wav_as_output_pcm(self, path):
+        import wave
+
+        import numpy as np
+        import soxr
+
+        from src.constants.constants import AudioConfig
+
+        with wave.open(str(path), "rb") as wav_file:
+            channels = wav_file.getnchannels()
+            sample_rate = wav_file.getframerate()
+            sample_width = wav_file.getsampwidth()
+            frames = wav_file.readframes(wav_file.getnframes())
+
+        if sample_width == 1:
+            audio = (np.frombuffer(frames, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
+        elif sample_width == 2:
+            audio = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
+        elif sample_width == 4:
+            audio = np.frombuffer(frames, dtype="<i4").astype(np.float32) / 2147483648.0
+        else:
+            raise ValueError(f"Unsupported WAV sample width: {sample_width}")
+
+        if channels > 1:
+            audio = audio.reshape(-1, channels).mean(axis=1)
+
+        target_rate = AudioConfig.OUTPUT_SAMPLE_RATE
+        if sample_rate != target_rate:
+            audio = soxr.resample(audio, sample_rate, target_rate).astype(np.float32)
+            sample_rate = target_rate
+
+        return audio.astype(np.float32), sample_rate
+
+    async def _send_remote_wake_ack_and_wait(
+        self,
+        ack_text: str,
+        request_text: str,
+        start_timeout: float,
+        stop_timeout: float,
+    ) -> None:
+        if not ack_text:
+            return
+
         from src.core.event_bus import Events
 
         loop = asyncio.get_running_loop()
@@ -290,63 +450,70 @@ class WakeWordPlugin(Plugin):
                 return
             if message.get("type") != "tts":
                 return
+
             state = message.get("state")
-            if state == "start" and not started.done():
+            if state in ("start", "sentence_start") and not started.done():
+                logger.info(_wake_log("收到远程TTS开始", 内容=ack_text))
                 started.set_result(True)
             elif state == "stop":
                 if not started.done():
+                    logger.info(_wake_log("收到远程TTS开始", 内容=ack_text))
                     started.set_result(True)
                 if not stopped.done():
+                    logger.info(_wake_log("收到远程TTS结束", 内容=ack_text))
                     stopped.set_result(True)
 
         self._ctx.event_bus.on(Events.INCOMING_JSON, on_incoming_json)
+        self._wake_ack_waiting = True
         try:
-            await self._cmd.send_tts_speak(ack_text)
-            logger.info(_wake_log("唤醒反馈请求", 模式="server", 内容=ack_text, 协议="tts/speak"))
+            logger.info(
+                _wake_log(
+                    "准备发送远程TTS",
+                    内容=ack_text,
+                    协议="listen/detect",
+                    请求文本=request_text,
+                )
+            )
+            await self._cmd.send_tts_speak(request_text)
+            logger.info(
+                _wake_log(
+                    "远程TTS请求已发送",
+                    内容=ack_text,
+                    协议="listen/detect",
+                    请求文本=request_text,
+                )
+            )
 
             try:
-                await asyncio.wait_for(started, timeout=min(2.0, timeout))
-                logger.info(_wake_log("唤醒反馈开始", 模式="server"))
+                logger.info(_wake_log("等待远程TTS开始", 内容=ack_text, 超时=f"{start_timeout}s"))
+                await asyncio.wait_for(started, timeout=start_timeout)
             except asyncio.TimeoutError:
-                logger.warning(_wake_log("唤醒反馈未开始", 模式="server", 原因="未收到 TTS start", 推断="服务端可能不支持 tts/speak"))
-                if local_fallback:
-                    logger.warning(_wake_log("唤醒反馈兜底", 模式="local", 原因="server 未开始"))
-                    await self._play_local_wake_ack_and_wait(ack_text)
+                logger.warning(_wake_log("远程TTS未启动，降级为UI提示并进入监听"))
+                await self._show_wake_ui_feedback(ack_text)
                 return
 
             try:
-                await asyncio.wait_for(stopped, timeout=timeout)
-                logger.info(_wake_log("唤醒反馈完成", 模式="server", 后续动作="进入监听"))
+                await asyncio.wait_for(stopped, timeout=stop_timeout)
             except asyncio.TimeoutError:
                 logger.warning(
-                    _wake_log("唤醒反馈结束等待超时", 模式="server", 超时=f"{timeout}s", 后续动作="进入监听")
+                    _wake_log("远程TTS结束等待超时", 内容=ack_text, 超时=f"{stop_timeout}s")
                 )
         except Exception as e:
-            logger.warning(_wake_log("唤醒反馈请求失败", 模式="server", 错误=e))
+            logger.warning(_wake_log("远程TTS请求失败", 内容=ack_text, 错误=e))
+            await self._show_wake_ui_feedback(ack_text)
         finally:
+            self._wake_ack_waiting = False
             self._ctx.event_bus.off(Events.INCOMING_JSON, on_incoming_json)
 
-    async def _play_local_wake_ack_and_wait(self, ack_text: str) -> None:
-        started = self._start_local_wake_ack(ack_text)
-        if started:
-            wait_seconds = min(3.0, max(0.8, len(ack_text) * 0.25))
-            logger.info(_wake_log("唤醒反馈等待", 模式="local", 估算时长=f"{wait_seconds:.1f}s"))
-            await asyncio.sleep(wait_seconds)
-
-    def _start_local_wake_ack(self, ack_text: str) -> bool:
-        """Start non-blocking local TTS for the wake acknowledgement."""
-        try:
-            from src.utils.wake_ack_tts import speak_wake_ack
-
-            if speak_wake_ack(ack_text):
-                logger.info(_wake_log("唤醒反馈开始", 模式="local", 内容=ack_text))
-                return True
-
-            logger.info(_wake_log("唤醒反馈未开始", 模式="local", 原因="本地 TTS 未启动", 后续动作="仅显示 UI"))
-            return False
-        except Exception as e:
-            logger.warning(_wake_log("唤醒反馈异常", 模式="local", 错误=e))
-            return False
+    async def on_incoming_json(self, message) -> None:
+        if isinstance(message, dict) and message.get("type") == "tts":
+            logger.info(
+                _wake_log(
+                    "收到远程TTS事件",
+                    state=message.get("state"),
+                    当前是否唤醒反馈等待中=self._wake_ack_waiting,
+                )
+            )
 
     @staticmethod
     def _format_state(state) -> str:

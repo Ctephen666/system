@@ -114,7 +114,7 @@ class PluginCommands(Protocol):
 
     async def send_tts_speak(self, text: str) -> None:
         """
-        请求服务端使用当前配置音色直接播报文本.
+        使用服务端官方文本入口请求远程 TTS 播放文本.
         """
         ...
 

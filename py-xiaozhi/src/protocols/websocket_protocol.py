@@ -326,6 +326,9 @@ class WebsocketProtocol(Protocol):
                 logger.error(f"不支持的传输方式: {transport}")
                 return
 
+            self.session_id = data.get("session_id", "")
+            logger.info(f"收到服务器 hello 响应，session_id={self.session_id}")
+
             # 设置 hello 接收事件
             self.hello_received.set()
 

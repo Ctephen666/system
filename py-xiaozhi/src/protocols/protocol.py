@@ -122,18 +122,25 @@ class Protocol:
             "state": "detect",
             "text": wake_word,
         }
+        logger.info(f"发送唤醒词上报: type=listen,state=detect,text={wake_word}")
         await self.send_text(json.dumps(message))
 
     async def send_tts_speak(self, text: str):
         """
-        请求服务端使用当前配置音色直接播报文本.
+        使用官方 listen/detect 文本入口请求服务端处理文本并返回 TTS.
+
+        当前小智服务端没有稳定支持客户端主动发送 type=tts,state=speak。
+        listen/detect 不是直接朗读协议；服务端通常会经过对话链路后，再按正常链路返回
+        tts/start、Opus 音频和 tts/stop。若要 100% 固定朗读指定文本，需要服务端提供直接 TTS
+        或在 listen/detect 处理逻辑里专门合成该文本。
         """
         message = {
             "session_id": self.session_id,
-            "type": "tts",
-            "state": "speak",
+            "type": "listen",
+            "state": "detect",
             "text": text,
         }
+        logger.info(f"发送远程TTS请求: type=listen,state=detect,text={text}")
         await self.send_text(json.dumps(message))
 
     async def send_start_listening(self, mode):
