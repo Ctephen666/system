@@ -73,14 +73,12 @@ AppWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
 
-                        /*
                         MonkAvatar {
                             id: monkAvatar
                             anchors.fill: parent
                             showStatusText: true
                             videoScale: 1.0
                         }
-                        */
 
                         /*
                         MileHologram {
@@ -91,14 +89,14 @@ AppWindow {
                         }
                         */
 
-                        
+                        /*
                         PusaHologram {
                             id: pusaHologram
                             anchors.fill: parent
                             showStatusText: true
                             videoScale: 1.0
                         }
-                        
+                        */
 
                         /*
                         XiaoShaMiHologram {

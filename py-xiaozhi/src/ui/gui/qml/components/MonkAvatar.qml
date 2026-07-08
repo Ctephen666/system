@@ -9,7 +9,7 @@ Item {
     width: 420
     height: 420
 
-    property url videoSource: Qt.resolvedUrl("../../../../../assets/monk_hologram_square_layout_sway.mp4")
+    property url videoSource: Qt.resolvedUrl("../../../../../assets/heshang.mp4")
     property bool showStatusText: true
     property bool autoPlay: true
     property bool muted: true

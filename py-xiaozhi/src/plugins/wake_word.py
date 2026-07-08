@@ -174,10 +174,11 @@ class WakeWordPlugin(Plugin):
                 if not ack_config["enabled"]:
                     logger.info(_wake_log("唤醒反馈跳过", 原因="配置未启用"))
                 elif ack_config["mode"] == "local_audio_file":
-                    await self._play_wake_ack_audio_file_and_wait(
-                        ack_config["audio_path"],
+                    # await self._show_wake_ui_feedback(ack_config["text"])
+                     await self._play_wake_ack_audio_file_and_wait(
+                         ack_config["audio_path"],
                         ack_config["text"],
-                    )
+                     )
 
                 logger.info(_wake_log("准备连接协议"))
                 connected = await self._cmd.connect_protocol()
