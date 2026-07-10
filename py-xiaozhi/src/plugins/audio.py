@@ -28,6 +28,7 @@ class AudioPlugin(Plugin):
         self.codec: Optional[AudioCodec] = None
         self._send_sem = asyncio.Semaphore(MAX_CONCURRENT_AUDIO_SENDS)
         self._in_silence_period = False
+        self._silence_tokens = 0
 
     async def setup(self, ctx: "PluginContext", cmd: "PluginCommands") -> None:
         await super().setup(ctx, cmd)
@@ -69,10 +70,24 @@ class AudioPlugin(Plugin):
         from src.constants.constants import DeviceState
 
         if state == DeviceState.LISTENING:
-            self._in_silence_period = True
-            try:
-                await asyncio.sleep(0.2)
-            finally:
+            self.suppress_microphone_audio(0.2)
+
+    def suppress_microphone_audio(self, duration: float = 0.8) -> None:
+        """Temporarily stop sending microphone audio to the server."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._hold_silence_period(max(0.0, duration)))
+        except RuntimeError:
+            pass
+
+    async def _hold_silence_period(self, duration: float) -> None:
+        self._silence_tokens += 1
+        self._in_silence_period = True
+        try:
+            await asyncio.sleep(duration)
+        finally:
+            self._silence_tokens = max(0, self._silence_tokens - 1)
+            if self._silence_tokens == 0:
                 self._in_silence_period = False
 
     async def on_incoming_json(self, message) -> None:

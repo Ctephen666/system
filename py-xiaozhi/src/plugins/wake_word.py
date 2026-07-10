@@ -159,58 +159,65 @@ class WakeWordPlugin(Plugin):
                     state=self._format_state(state),
                 )
             )
-            if self._ctx.is_speaking():
+            was_speaking = self._ctx.is_speaking()
+            if self._audio_plugin:
+                self._audio_plugin.suppress_microphone_audio(1.8)
+            if was_speaking:
                 action = "当前正在说话，执行打断"
                 await self._publish_wake_word_info(wake_word, full_text, state, action)
                 await self._cmd.abort_speaking(AbortReason.WAKE_WORD_DETECTED)
+                if self._audio_plugin and self._audio_plugin.codec:
+                    await self._audio_plugin.codec.clear_audio_queue()
+                await asyncio.sleep(0.2)
                 if self._audio_plugin and self._audio_plugin.codec:
                     await self._audio_plugin.codec.clear_audio_queue()
             else:
                 action = "播放唤醒音频并进入监听"
                 await self._publish_wake_word_info(wake_word, full_text, state, action)
 
-                ack_config = self._get_wake_ack_config()
-                logger.info(_wake_log("唤醒反馈模式", 模式=ack_config["mode"]))
-                if not ack_config["enabled"]:
-                    logger.info(_wake_log("唤醒反馈跳过", 原因="配置未启用"))
-                elif ack_config["mode"] == "local_audio_file":
-                    # await self._show_wake_ui_feedback(ack_config["text"])
-                     await self._play_wake_ack_audio_file_and_wait(
-                         ack_config["audio_path"],
-                        ack_config["text"],
-                     )
-
-                logger.info(_wake_log("准备连接协议"))
-                connected = await self._cmd.connect_protocol()
-                logger.info(_wake_log("协议连接完成", opened=connected))
-                if not connected:
-                    return
-
-                if ack_config["enabled"] and ack_config["mode"] == "remote_tts":
-                    await self._send_remote_wake_ack_and_wait(
-                        ack_config["text"],
-                        ack_config["request_text"],
-                        ack_config["start_timeout"],
-                        ack_config["stop_timeout"],
-                    )
-                elif ack_config["enabled"] and ack_config["mode"] == "ui_only":
-                    logger.info(_wake_log("准备发送 listen/detect", wake_word=wake_word))
-                    await self._cmd.send_wake_word_detected(str(wake_word))
-                    logger.info(_wake_log("listen/detect 已发送", 协议="listen/detect", 唤醒词=wake_word))
-                    logger.info(_wake_log("唤醒上报已发送", 协议="listen/detect", 唤醒词=wake_word))
-                    logger.warning(_wake_log("服务端不支持主动 TTS，已降级为 UI 提示"))
-                    await self._show_wake_ui_feedback(ack_config["text"])
-
-                # 启动自动对话
-                from src.constants.constants import ListeningMode
-
-                mode = (
-                    ListeningMode.REALTIME
-                    if self._ctx.get_config().get_config("AEC_OPTIONS.ENABLED", True)
-                    else ListeningMode.AUTO_STOP
+            ack_config = self._get_wake_ack_config()
+            logger.info(_wake_log("唤醒反馈模式", 模式=ack_config["mode"], 打断中=was_speaking))
+            if not ack_config["enabled"]:
+                logger.info(_wake_log("唤醒反馈跳过", 原因="配置未启用"))
+            elif ack_config["mode"] == "local_audio_file":
+                if self._audio_plugin:
+                    self._audio_plugin.suppress_microphone_audio(1.8)
+                await self._play_wake_ack_audio_file_and_wait(
+                    ack_config["audio_path"],
+                    ack_config["text"],
                 )
-                logger.info(_wake_log("进入监听", 模式=mode.value))
-                await self._cmd.start_listening(mode)
+
+            logger.info(_wake_log("准备连接协议"))
+            connected = await self._cmd.connect_protocol()
+            logger.info(_wake_log("协议连接完成", opened=connected))
+            if not connected:
+                return
+
+            if ack_config["enabled"] and ack_config["mode"] == "remote_tts":
+                await self._send_remote_wake_ack_and_wait(
+                    ack_config["text"],
+                    ack_config["request_text"],
+                    ack_config["start_timeout"],
+                    ack_config["stop_timeout"],
+                )
+            elif ack_config["enabled"] and ack_config["mode"] == "ui_only":
+                logger.info(_wake_log("准备发送 listen/detect", wake_word=wake_word))
+                await self._cmd.send_wake_word_detected(str(wake_word))
+                logger.info(_wake_log("listen/detect 已发送", 协议="listen/detect", 唤醒词=wake_word))
+                logger.info(_wake_log("唤醒上报已发送", 协议="listen/detect", 唤醒词=wake_word))
+                logger.warning(_wake_log("服务端不支持主动 TTS，已降级为 UI 提示"))
+                await self._show_wake_ui_feedback(ack_config["text"])
+
+            # 启动自动对话
+            from src.constants.constants import ListeningMode
+
+            mode = (
+                ListeningMode.REALTIME
+                if self._ctx.get_config().get_config("AEC_OPTIONS.ENABLED", True)
+                else ListeningMode.AUTO_STOP
+            )
+            logger.info(_wake_log("进入监听", 模式=mode.value))
+            await self._cmd.start_listening(mode)
         except Exception as e:
             logger.error(_wake_log("检测回调异常", 错误=e), exc_info=True)
 
