@@ -1,0 +1,7 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis\\spec\\backend\\quality-guidelines.md", "reason": "lint、测试与 MCP 验收要求"}
+{"file": ".trellis\\spec\\backend\\mcp-tool-pattern.md", "reason": "检查 MCP 自动发现和工具契约"}
+{"file": ".trellis\\spec\\backend\\asyncio-guidelines.md", "reason": "检查后台任务和阻塞 I/O 边界"}
+{"file": ".trellis\\tasks\\07-12-aroma-integration\\research\\aroma-system-integration.md", "reason": "检查上游硬件语义与 Qwen 集成边界"}
+{"file": ".trellis\\tasks\\07-12-aroma-integration\\research\\cleanup-audit.md", "reason": "检查清理边界和配置模板安全性"}
+{"file": ".trellis\\tasks\\07-12-aroma-integration\\research\\documentation-audit.md", "reason": "检查文档与当前代码、配置和香薰行为一致"}

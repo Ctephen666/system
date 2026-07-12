@@ -1,0 +1,136 @@
+"""应用内置配置默认值与副本工厂。"""
+
+from copy import deepcopy
+from typing import Any
+
+
+DEFAULT_CONFIG: dict[str, Any] = {
+    "SYSTEM_OPTIONS": {
+        "CLIENT_ID": None,
+        "DEVICE_ID": None,
+        "NETWORK": {
+            "OTA_VERSION_URL": "https://api.tenclass.net/xiaozhi/ota/",
+            "WEBSOCKET_URL": None,
+            "WEBSOCKET_ACCESS_TOKEN": None,
+            "MQTT_INFO": None,
+            "ACTIVATION_VERSION": "v2",
+            "AUTHORIZATION_URL": "https://xiaozhi.me/",
+        },
+    },
+    "WAKE_WORD_OPTIONS": {
+        "USE_WAKE_WORD": True,
+        "MODEL_PATH": "models/zh",
+        "NUM_THREADS": 5,
+        "PROVIDER": "cpu",
+        "MAX_ACTIVE_PATHS": 2,
+        "KEYWORDS_SCORE": 1.8,
+        "KEYWORDS_THRESHOLD": 0.2,
+        "NUM_TRAILING_BLANKS": 1,
+        "WAKE_WORD": "你好小智",
+        "WAKE_WORD_LANG": "zh",
+        "WAKE_RESPONSE_TTS_ENABLED": True,
+        "WAKE_RESPONSE_TTS_MODE": "server",
+        "WAKE_RESPONSE_TTS_LOCAL_FALLBACK": False,
+        "WAKE_RESPONSE_TTS_TIMEOUT": 8.0,
+        "WAKE_RESPONSE_TEXT": "老衲在此",
+        "WAKE_RESPONSE_MODE": "local_audio_file",
+        "WAKE_ACK_ENABLED": True,
+        "WAKE_ACK_TEXT": "老衲在此",
+        "WAKE_ACK_AUDIO_PATH": "老衲在此.wav",
+        "WAKE_ACK_REMOTE_REQUEST_TEXT": "请你只说老衲在此这四个字",
+        "WAKE_ACK_MODE": "local_audio_file",
+        "WAKE_ACK_TTS_START_TIMEOUT": 5.0,
+        "WAKE_ACK_TTS_STOP_TIMEOUT": 8.0,
+    },
+    "CAMERA": {
+        "camera_index": 0,
+        "frame_width": 640,
+        "frame_height": 480,
+        "fps": 30,
+        "Local_VL_url": "https://open.bigmodel.cn/api/paas/v4/",
+        "VLapi_key": "",
+        "models": "glm-4v-plus",
+    },
+    "AROMA": {
+        "ENABLED": False,
+        "SERIAL_PORT": "",
+        "BAUDRATE": 9600,
+        "DEVICE_ADDRESS": 1,
+        "SERIAL_TIMEOUT": 1.0,
+        "RETRIES": 1,
+        "ACTIVE_HIGH": True,
+        "MAX_STAGE_SECONDS": 600,
+        "MAX_TOTAL_SECONDS": 1800,
+        "CHANNEL_MAP": {
+            "lavender": 1,
+            "bergamot": 2,
+            "rosemary": 3,
+            "lemon": 4,
+            "peppermint": 5,
+            "chamomile": 6,
+        },
+        "QWEN": {
+            "API_KEY": "",
+            "BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "MODEL": "qwen3.6-plus",
+            "CONNECT_TIMEOUT": 5.0,
+            "READ_TIMEOUT": 20.0,
+        },
+    },
+    "SHORTCUTS": {
+        "ENABLED": True,
+        "MANUAL_PRESS": {"modifier": "ctrl", "key": "j", "description": "按住说话"},
+        "AUTO_TOGGLE": {"modifier": "ctrl", "key": "k", "description": "自动对话"},
+        "ABORT": {"modifier": "ctrl", "key": "q", "description": "中断对话"},
+        "MODE_TOGGLE": {"modifier": "ctrl", "key": "m", "description": "切换模式"},
+        "WINDOW_TOGGLE": {
+            "modifier": "ctrl",
+            "key": "w",
+            "description": "显示/隐藏窗口",
+        },
+    },
+    "AEC_OPTIONS": {
+        "ENABLED": False,
+        "BUFFER_MAX_LENGTH": 200,
+        "FRAME_DELAY": 3,
+        "FILTER_LENGTH_RATIO": 0.4,
+        "ENABLE_PREPROCESS": True,
+    },
+    "AUDIO_DEVICES": {
+        "input_device_id": None,
+        "input_device_name": None,
+        "output_device_id": None,
+        "output_device_name": None,
+        "input_sample_rate": None,
+        "output_sample_rate": None,
+        "input_channels": None,
+        "output_channels": None,
+        "opus_output_sample_rate": 24000,
+        "frame_duration": 20,
+    },
+    "LOGGING": {
+        "LEVEL": "INFO",
+        "FORMAT_TYPE": "colored",
+        "ENABLE_CONSOLE": True,
+        "ENABLE_FILE": True,
+        "ENABLE_ERROR_FILE": True,
+        "ENABLE_JSON_FILE": False,
+        "ENABLE_ASYNC": False,
+        "ENABLE_SENSITIVE_FILTER": True,
+        "MAX_BYTES": 10485760,
+        "BACKUP_COUNT": 30,
+        "ROTATION_WHEN": "midnight",
+        "THIRD_PARTY_LEVELS": {
+            "urllib3": "WARNING",
+            "websockets": "WARNING",
+            "asyncio": "WARNING",
+            "paho": "WARNING",
+            "PIL": "WARNING",
+        },
+    },
+}
+
+
+def create_default_config() -> dict[str, Any]:
+    """返回可安全修改的完整默认配置副本。"""
+    return deepcopy(DEFAULT_CONFIG)

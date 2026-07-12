@@ -1,0 +1,8 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis\\spec\\backend\\mcp-tool-pattern.md", "reason": "香薰 MCP 工具的注册、目录和返回值约定"}
+{"file": ".trellis\\spec\\backend\\asyncio-guidelines.md", "reason": "硬件 I/O 和后台执行的异步约定"}
+{"file": ".trellis\\spec\\backend\\error-handling.md", "reason": "硬件与 API 失败的处理约定"}
+{"file": ".trellis\\spec\\backend\\python-style.md", "reason": "新增 Python 模块的风格约定"}
+{"file": ".trellis\\tasks\\07-12-aroma-integration\\research\\aroma-system-integration.md", "reason": "上游系统的可复用边界和 Qwen API 调用方案"}
+{"file": ".trellis\\tasks\\07-12-aroma-integration\\research\\cleanup-audit.md", "reason": "缓存清理范围、需保留资产与统一配置模板的审计结论"}
+{"file": ".trellis\\tasks\\07-12-aroma-integration\\research\\documentation-audit.md", "reason": "使用文档的目录、实际运行参数、部署和安全内容审计"}

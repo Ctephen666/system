@@ -1,10 +1,14 @@
+"""用户配置加载、合并与安全写入。"""
+
 import json
 import os
-import shutil
 import uuid
-from typing import Any, Dict
+from copy import deepcopy
+from pathlib import Path
+from typing import Any
 
 from src.logging import get_logger
+from src.utils.config_defaults import create_default_config
 from src.utils.resource_finder import (
     get_config_dir,
     get_user_cache_dir,
@@ -15,259 +19,150 @@ logger = get_logger()
 
 
 class ConfigManager:
-    """
-    配置管理器.
-    """
+    """按环境变量、仓库和旧用户目录的优先级管理 JSON 配置。"""
 
     _instance = None
+    CONFIG_PATH_ENV_VAR = "XIAOZHI_CONFIG_PATH"
 
-    # 默认配置
-    DEFAULT_CONFIG = {
-        "SYSTEM_OPTIONS": {
-            "CLIENT_ID": None,
-            "DEVICE_ID": None,
-            "NETWORK": {
-                "OTA_VERSION_URL": "https://api.tenclass.net/xiaozhi/ota/",
-                "WEBSOCKET_URL": None,
-                "WEBSOCKET_ACCESS_TOKEN": None,
-                "MQTT_INFO": None,
-                "ACTIVATION_VERSION": "v2",  # 可选值: v1, v2
-                "AUTHORIZATION_URL": "https://xiaozhi.me/",
-            },
-        },
-        "WAKE_WORD_OPTIONS": {
-            "USE_WAKE_WORD": True,
-            "MODEL_PATH": "models/zh",
-            "NUM_THREADS": 5,
-            "PROVIDER": "cpu",
-            "MAX_ACTIVE_PATHS": 2,
-            "KEYWORDS_SCORE": 1.8,
-            "KEYWORDS_THRESHOLD": 0.2,
-            "NUM_TRAILING_BLANKS": 1,
-            "WAKE_WORD": "你好小智",
-            "WAKE_WORD_LANG": "zh",
-            "WAKE_RESPONSE_TTS_ENABLED": True,
-            "WAKE_RESPONSE_TTS_MODE": "server",
-            "WAKE_RESPONSE_TTS_LOCAL_FALLBACK": False,
-            "WAKE_RESPONSE_TTS_TIMEOUT": 8.0,
-            "WAKE_RESPONSE_TEXT": "老衲在此",
-            "WAKE_RESPONSE_MODE": "local_audio_file",
-            "WAKE_ACK_ENABLED": True,
-            "WAKE_ACK_TEXT": "老衲在此",
-            "WAKE_ACK_AUDIO_PATH": "老衲在此.wav",
-            "WAKE_ACK_REMOTE_REQUEST_TEXT": "请你只说老衲在此这四个字",
-            "WAKE_ACK_MODE": "local_audio_file",
-            "WAKE_ACK_TTS_START_TIMEOUT": 5.0,
-            "WAKE_ACK_TTS_STOP_TIMEOUT": 8.0,
-        },
-        "CAMERA": {
-            "camera_index": 0,
-            "frame_width": 640,
-            "frame_height": 480,
-            "fps": 30,
-            "Local_VL_url": "https://open.bigmodel.cn/api/paas/v4/",
-            "VLapi_key": "",
-            "models": "glm-4v-plus",
-        },
-        "AROMA": {
-            "ENABLED": False,
-            "SERIAL_PORT": "",
-            "BAUDRATE": 9600,
-            "DEVICE_ADDRESS": 1,
-            "SERIAL_TIMEOUT": 1.0,
-            "RETRIES": 1,
-            "ACTIVE_HIGH": True,
-            "MAX_STAGE_SECONDS": 600,
-            "MAX_TOTAL_SECONDS": 1800,
-            "CHANNEL_MAP": {
-                "lavender": 1,
-                "bergamot": 2,
-                "rosemary": 3,
-                "lemon": 4,
-                "peppermint": 5,
-                "chamomile": 6,
-            },
-            "QWEN": {
-                "API_KEY": "",
-                "BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                "MODEL": "qwen3.6-plus",
-                "CONNECT_TIMEOUT": 5.0,
-                "READ_TIMEOUT": 20.0,
-            },
-        },
-        "SHORTCUTS": {
-            "ENABLED": True,
-            "MANUAL_PRESS": {"modifier": "ctrl", "key": "j", "description": "按住说话"},
-            "AUTO_TOGGLE": {"modifier": "ctrl", "key": "k", "description": "自动对话"},
-            "ABORT": {"modifier": "ctrl", "key": "q", "description": "中断对话"},
-            "MODE_TOGGLE": {"modifier": "ctrl", "key": "m", "description": "切换模式"},
-            "WINDOW_TOGGLE": {
-                "modifier": "ctrl",
-                "key": "w",
-                "description": "显示/隐藏窗口",
-            },
-        },
-        "AEC_OPTIONS": {
-            "ENABLED": False,
-            "BUFFER_MAX_LENGTH": 200,
-            "FRAME_DELAY": 3,
-            "FILTER_LENGTH_RATIO": 0.4,
-            "ENABLE_PREPROCESS": True,
-        },
-        "AUDIO_DEVICES": {
-            "input_device_id": None,
-            "input_device_name": None,
-            "output_device_id": None,
-            "output_device_name": None,
-            "input_sample_rate": None,
-            "output_sample_rate": None,
-            "input_channels": None,
-            "output_channels": None,
-            "opus_output_sample_rate": 24000,  # Opus 解码采样率：24000(官方) 或 16000(第三方)
-            "frame_duration": 20,  # 音频帧长度(ms)：20(低延迟) / 40(平衡) / 60(低CPU)
-        },
-        "LOGGING": {
-            "LEVEL": "INFO",  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-            "FORMAT_TYPE": "colored",  # colored, json, simple
-            "ENABLE_CONSOLE": True,
-            "ENABLE_FILE": True,
-            "ENABLE_ERROR_FILE": True,
-            "ENABLE_JSON_FILE": False,
-            "ENABLE_ASYNC": False,
-            "ENABLE_SENSITIVE_FILTER": True,
-            "MAX_BYTES": 10485760,  # 10MB
-            "BACKUP_COUNT": 30,
-            "ROTATION_WHEN": "midnight",  # midnight, H, D
-            "THIRD_PARTY_LEVELS": {
-                "urllib3": "WARNING",
-                "websockets": "WARNING",
-                "asyncio": "WARNING",
-                "paho": "WARNING",
-                "PIL": "WARNING",
-            },
-        },
-    }
+    # 保留既有公开接口；内部始终通过 create_default_config() 获取独立副本。
+    DEFAULT_CONFIG = create_default_config()
 
     def __new__(cls):
-        """
-        确保单例模式.
-        """
+        """确保单例模式。"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
     def __init__(self):
-        """
-        初始化配置管理器.
-        """
+        """初始化配置管理器。"""
         if self._initialized:
             return
         self._initialized = True
 
-        # 初始化配置文件路径
         self._init_config_paths()
-
-        # 确保必要的目录存在
         self._ensure_required_directories()
-
-        # 加载配置
         self._config = self._load_config()
 
-    def _init_config_paths(self):
-        """
-        初始化配置文件路径.
+    def _init_config_paths(self) -> None:
+        """选择当前配置来源，并保留旧用户目录作为兼容回退。"""
+        self.repository_config_file = get_config_dir() / "config.json"
+        self.legacy_config_dir = get_user_data_dir() / "config"
+        self.legacy_config_file = self.legacy_config_dir / "config.json"
+        self._config_load_failed = False
 
-        配置文件存储到用户数据目录，打包后可写。
-        首次运行时从安装目录迁移默认配置。
-        """
-        # 用户数据目录下的 config 子目录
-        self.config_dir = get_user_data_dir() / "config"
-        self.config_dir.mkdir(parents=True, exist_ok=True)
+        environment_path = os.environ.get(self.CONFIG_PATH_ENV_VAR)
+        if environment_path:
+            self._set_config_file(Path(environment_path).expanduser(), "environment")
+        elif self.repository_config_file.exists():
+            self._set_config_file(self.repository_config_file, "repository")
+        elif self.legacy_config_file.exists():
+            self._set_config_file(self.legacy_config_file, "legacy")
+        else:
+            self._set_config_file(self.repository_config_file, "repository")
 
-        self.config_file = self.config_dir / "config.json"
+        logger.info("配置来源: %s", self.config_source)
+        logger.info("配置文件: %s", self.config_file.absolute())
 
-        # 如果用户目录没有配置文件，尝试从安装目录迁移
-        if not self.config_file.exists():
-            install_config = get_config_dir() / "config.json"
-            if install_config.exists():
-                try:
-                    shutil.copy2(install_config, self.config_file)
-                    logger.info(f"已从安装目录迁移配置: {install_config} -> {self.config_file}")
-                except Exception as e:
-                    logger.warning(f"迁移配置文件失败: {e}，将使用默认配置")
+    def _set_config_file(self, config_file: Path, source: str) -> None:
+        """设置当前读取与写入的配置文件。"""
+        self.config_file = config_file
+        self.config_dir = config_file.parent
+        self.config_source = source
 
-        # 记录配置文件路径
-        logger.info(f"配置目录: {self.config_dir.absolute()}")
-        logger.info(f"配置文件: {self.config_file.absolute()}")
-
-    def _ensure_required_directories(self):
-        """
-        确保必要的目录存在.
-        """
-        # models 目录保留在安装目录（只读）
-        # cache 目录使用用户缓存目录（可写）
+    def _ensure_required_directories(self) -> None:
+        """确保运行时缓存目录可用。"""
         cache_dir = get_user_cache_dir()
-        logger.debug(f"缓存目录: {cache_dir.absolute()}")
+        logger.debug("缓存目录: %s", cache_dir.absolute())
 
-    def _load_config(self) -> Dict[str, Any]:
-        """
-        加载配置文件，如果不存在则创建.
-        """
+    def _load_config(self) -> dict[str, Any]:
+        """加载用户配置；格式错误时保留原文件并回退到内置默认值。"""
+        self._config_load_failed = False
+        if not self.config_file.exists():
+            logger.info("配置文件不存在，本次运行使用内置默认配置")
+            return create_default_config()
+
         try:
-            if self.config_file.exists():
-                logger.debug(f"找到配置文件: {self.config_file}")
-                config = json.loads(self.config_file.read_text(encoding="utf-8"))
-                return self._merge_configs(self.DEFAULT_CONFIG, config)
-            else:
-                # 创建默认配置文件
-                logger.info("配置文件不存在，创建默认配置")
-                self._save_config(self.DEFAULT_CONFIG)
-                return self.DEFAULT_CONFIG.copy()
+            logger.debug("找到配置文件: %s", self.config_file)
+            custom_config = json.loads(self.config_file.read_text(encoding="utf-8"))
+            if not isinstance(custom_config, dict):
+                raise ValueError("配置根节点必须是 JSON 对象")
+            return self._merge_configs(create_default_config(), custom_config)
+        except json.JSONDecodeError as error:
+            self._config_load_failed = True
+            logger.error(
+                "配置文件 JSON 格式错误，已保留原文件且未覆盖: %s（第 %s 行，第 %s 列）",
+                self.config_file,
+                error.lineno,
+                error.colno,
+            )
+        except (OSError, UnicodeError, ValueError) as error:
+            self._config_load_failed = True
+            logger.error(
+                "配置文件无法读取或格式无效，已保留原文件且未覆盖: %s（%s）",
+                self.config_file,
+                error,
+            )
+        except Exception as error:
+            self._config_load_failed = True
+            logger.error(
+                "配置加载失败，已保留原文件且未覆盖: %s", self.config_file, exc_info=True
+            )
+            logger.debug("配置加载异常类型: %s", type(error).__name__)
 
-        except Exception as e:
-            logger.error(f"配置加载错误: {e}")
-            return self.DEFAULT_CONFIG.copy()
+        return create_default_config()
 
-    def _save_config(self, config: dict) -> bool:
-        """原子写入配置文件（临时文件 + rename 防写入中断损坏）."""
+    def _save_config(self, config: dict[str, Any]) -> bool:
+        """写回当前来源；仓库只读时安全回退到旧用户目录。"""
+        if self._config_load_failed:
+            logger.error("配置文件加载失败，拒绝覆盖原文件: %s", self.config_file)
+            return False
+
+        if self._write_config_file(config, self.config_file):
+            return True
+
+        if self.config_source == "repository":
+            logger.warning("仓库配置不可写，回退到用户配置目录")
+            if self._write_config_file(config, self.legacy_config_file):
+                self._set_config_file(self.legacy_config_file, "legacy")
+                return True
+
+        return False
+
+    def _write_config_file(self, config: dict[str, Any], config_file: Path) -> bool:
+        """通过临时文件和原子替换写入指定配置文件。"""
+        tmp_file = config_file.with_suffix(".tmp")
         try:
-            self.config_dir.mkdir(parents=True, exist_ok=True)
-
-            tmp_file = self.config_file.with_suffix(".tmp")
+            config_file.parent.mkdir(parents=True, exist_ok=True)
             tmp_file.write_text(
                 json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8"
             )
-            os.replace(tmp_file, self.config_file)
-            logger.debug(f"配置已保存到: {self.config_file}")
+            os.replace(tmp_file, config_file)
+            logger.debug("配置已保存到: %s", config_file)
             return True
-
-        except Exception as e:
-            logger.error(f"配置保存错误: {e}")
+        except Exception as error:
+            logger.error("配置保存失败: %s", error, exc_info=True)
+            try:
+                tmp_file.unlink(missing_ok=True)
+            except OSError:
+                pass
             return False
 
     @staticmethod
-    def _merge_configs(default: dict, custom: dict) -> dict:
-        """
-        递归合并配置字典.
-        """
-        result = default.copy()
+    def _merge_configs(
+        default: dict[str, Any], custom: dict[str, Any]
+    ) -> dict[str, Any]:
+        """递归合并配置，同时隔离默认值和用户配置中的可变对象。"""
+        result = deepcopy(default)
         for key, value in custom.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
+            if isinstance(result.get(key), dict) and isinstance(value, dict):
                 result[key] = ConfigManager._merge_configs(result[key], value)
             else:
-                result[key] = value
+                result[key] = deepcopy(value)
         return result
 
     def get_config(self, path: str, default: Any = None) -> Any:
-        """
-        通过路径获取配置值
-        path: 点分隔的配置路径，如 "SYSTEM_OPTIONS.NETWORK.MQTT_INFO"
-        """
+        """按点分路径读取配置值。"""
         try:
             value = self._config
             for key in path.split("."):
@@ -277,56 +172,51 @@ class ConfigManager:
             return default
 
     def update_config(self, path: str, value: Any) -> bool:
-        """
-        更新特定配置项
-        path: 点分隔的配置路径，如 "SYSTEM_OPTIONS.NETWORK.MQTT_INFO"
-        """
+        """更新指定配置项并持久化到当前可写来源。"""
         try:
-            current = self._config
+            if not path or any(not part for part in path.split(".")):
+                raise ValueError("配置路径不能为空")
+
+            updated_config = deepcopy(self._config)
+            current = updated_config
             *parts, last = path.split(".")
             for part in parts:
                 current = current.setdefault(part, {})
             current[last] = value
-            return self._save_config(self._config)
-        except Exception as e:
-            logger.error(f"配置更新错误 {path}: {e}")
+            if not self._save_config(updated_config):
+                return False
+            self._config = updated_config
+            return True
+        except (AttributeError, IndexError, TypeError, ValueError) as error:
+            logger.error("配置更新错误 %s: %s", path, error, exc_info=True)
             return False
 
     def reload_config(self) -> bool:
-        """
-        重新加载配置文件.
-        """
+        """重新加载配置文件。"""
         try:
             self._config = self._load_config()
             logger.info("配置文件已重新加载")
             return True
-        except Exception as e:
-            logger.error(f"配置重新加载失败: {e}")
+        except Exception as error:
+            logger.error("配置重新加载失败: %s", error, exc_info=True)
             return False
 
     def generate_uuid(self) -> str:
-        """
-        生成 UUID v4.
-        """
+        """生成 UUID v4。"""
         return str(uuid.uuid4())
 
-    def initialize_client_id(self):
-        """
-        确保存在客户端ID.
-        """
+    def initialize_client_id(self) -> None:
+        """确保客户端 ID 已生成并持久化。"""
         if not self.get_config("SYSTEM_OPTIONS.CLIENT_ID"):
             client_id = self.generate_uuid()
-            success = self.update_config("SYSTEM_OPTIONS.CLIENT_ID", client_id)
-            if success:
-                logger.info(f"已生成新的客户端ID: {client_id}")
+            if self.update_config("SYSTEM_OPTIONS.CLIENT_ID", client_id):
+                logger.info("已生成新的客户端 ID")
             else:
-                logger.error("保存新的客户端ID失败")
+                logger.error("保存新的客户端 ID 失败")
 
     @classmethod
     def get_instance(cls):
-        """
-        获取配置管理器实例.
-        """
+        """获取配置管理器单例。"""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance

@@ -1,8 +1,37 @@
 /logs
-/config
+/config/*
+!/config/config.json
 
 .venv
 **/__pycache__/
+*.py[cod]
+*$py.class
+
+# Python / test / type-check caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytype/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python packaging artifacts
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+*.whl
+*.manifest
+build/
+dist/
+
+# Local environment files may contain credentials
+.env
+.env.*
+!.env.example
 
 .idea/
 venv/
