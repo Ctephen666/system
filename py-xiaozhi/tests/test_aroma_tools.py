@@ -1,5 +1,10 @@
 """香薰 MCP 工具的离线测试。"""
 
+import asyncio
+import sys
+from threading import Event
+from types import SimpleNamespace
+
 import pytest
 
 from src.mcp.decorators import iter_registered_mcp_tools
@@ -43,6 +48,13 @@ class FakeDriver:
             raise
 
 
+class StopBeforeStartupDriver:
+    """等待退出信号但不报告成功的驱动，用于启动握手回归测试。"""
+
+    def run_recipe(self, stages, stop_event, on_stage, on_started, on_error):
+        stop_event.wait(1)
+
+
 @pytest.mark.asyncio
 async def test_enter_then_disabled_start_returns_json_error():
     manager = AromaManager(FakeConfig())
@@ -56,6 +68,18 @@ async def test_enter_then_disabled_start_returns_json_error():
         "error": "hardware_disabled",
         "message": "香薰硬件控制未启用；请在本地配置中将 AROMA.ENABLED 设为 true。",
     }
+
+
+@pytest.mark.asyncio
+async def test_string_false_does_not_enable_hardware():
+    config = FakeConfig(enabled=True)
+    config.values["AROMA.ENABLED"] = "false"
+    manager = AromaManager(config)
+    await manager.enter()
+
+    result = await manager.start("我想放松")
+
+    assert result["error"] == "hardware_disabled"
 
 
 @pytest.mark.asyncio
@@ -74,11 +98,84 @@ async def test_start_and_exit_interrupts_fake_recipe_without_serial_access():
 
 
 @pytest.mark.asyncio
+async def test_exit_during_startup_unblocks_start_without_starting_hardware():
+    manager = AromaManager(FakeConfig(enabled=True))
+    manager._driver = lambda: StopBeforeStartupDriver()
+    await manager.enter()
+
+    start_task = asyncio.create_task(manager.start("我想放松"))
+    while manager._task is None:
+        await asyncio.sleep(0)
+
+    exited = await manager.exit()
+    started = await start_task
+
+    assert exited["success"] is True
+    assert started["error"] == "serial_error"
+    assert (await manager.status())["running"] is False
+
+
+@pytest.mark.asyncio
 async def test_local_recipe_is_used_without_qwen_key():
     recipe = await AromaPlanner(FakeConfig()).create_recipe("我需要助眠")
 
     assert recipe.source == "local_rule"
     assert recipe.stages[0]["channel_numbers"] == [1]
+
+
+def test_qwen_uses_bounded_openai_compatible_request(monkeypatch):
+    config = FakeConfig()
+    config.values.update(
+        {
+            "AROMA.QWEN.API_KEY": "test-secret",
+            "AROMA.QWEN.BASE_URL": "https://example.invalid/compatible-mode/v1",
+            "AROMA.QWEN.MODEL": "qwen3.6-plus",
+        }
+    )
+    calls = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            calls["request"] = kwargs
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=(
+                                '{"summary":"助眠","stages":['
+                                '{"channels":["lavender"],"duration_seconds":30}]}'
+                            )
+                        )
+                    )
+                ]
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            calls["client"] = kwargs
+            self._http_client = kwargs["http_client"]
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+        def close(self):
+            self._http_client.close()
+            calls["closed"] = True
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+
+    recipe = AromaPlanner(config)._create_qwen_recipe(
+        "我需要助眠", {"lavender": 1, "bergamot": 2}
+    )
+
+    assert recipe["summary"] == "助眠"
+    assert calls["client"]["api_key"] == "test-secret"
+    assert calls["client"]["max_retries"] == 0
+    assert calls["request"]["model"] == "qwen3.6-plus"
+    assert calls["request"]["max_tokens"] == 600
+    assert calls["closed"] is True
+    assert (
+        AromaPlanner._redact_error("failed test-secret", "test-secret")
+        == "failed ***"
+    )
 
 
 def test_dam1600c_uses_modbus_single_coil_frame():
@@ -101,6 +198,41 @@ def test_dam1600c_uses_modbus_single_coil_frame():
     frame = serial_port.frames[0]
     assert frame[:6] == bytes([1, 5, 0, 0, 0xFF, 0])
     assert frame[-2:] == Dam1600CRelayDriver._crc16(frame[:6]).to_bytes(2, "little")
+
+
+def test_driver_closes_all_channels_when_stage_callback_fails():
+    class FakeSerial:
+        def __init__(self):
+            self.frames = []
+            self.closed = False
+
+        def write(self, frame):
+            self.frames.append(frame)
+
+        def flush(self):
+            return None
+
+        def close(self):
+            self.closed = True
+
+    serial_port = FakeSerial()
+    driver = Dam1600CRelayDriver(
+        RelaySettings("COM_TEST", 9600, 1, 0.1, 0, True)
+    )
+    driver._open_serial = lambda: serial_port
+
+    with pytest.raises(RuntimeError, match="stage callback failed"):
+        driver.run_recipe(
+            [{"channel_numbers": [1], "duration_seconds": 1}],
+            Event(),
+            lambda stage: (_ for _ in ()).throw(RuntimeError("stage callback failed")),
+            lambda: None,
+            lambda error: None,
+        )
+
+    assert serial_port.closed is True
+    assert len(serial_port.frames) == 17
+    assert all(frame[4:6] == bytes([0, 0]) for frame in serial_port.frames[1:])
 
 
 def test_discovery_registers_all_aroma_tools():

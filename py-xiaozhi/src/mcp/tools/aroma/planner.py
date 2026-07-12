@@ -29,6 +29,8 @@ class AromaPlanner:
     async def create_recipe(self, requirement: str) -> AromaRecipe:
         """根据自然语言需求创建经过通道和时长校验的配方。"""
         channel_map = self._channel_map()
+        if not channel_map:
+            raise RuntimeError("香薰通道映射为空，无法生成配方")
         ai_recipe = await asyncio.to_thread(
             self._create_qwen_recipe, requirement, channel_map
         )
@@ -41,7 +43,8 @@ class AromaPlanner:
     def _create_qwen_recipe(
         self, requirement: str, channel_map: dict[str, int]
     ) -> dict[str, Any] | None:
-        api_key = self._config.get_config("AROMA.QWEN.API_KEY", "")
+        raw_api_key = self._config.get_config("AROMA.QWEN.API_KEY", "")
+        api_key = raw_api_key.strip() if isinstance(raw_api_key, str) else ""
         if not api_key:
             return None
         try:
@@ -58,8 +61,10 @@ class AromaPlanner:
             )
             client = OpenAI(
                 api_key=api_key,
-                base_url=self._config.get_config("AROMA.QWEN.BASE_URL"),
+                base_url=str(self._config.get_config("AROMA.QWEN.BASE_URL", "")).strip()
+                or None,
                 http_client=httpx.Client(timeout=timeout),
+                max_retries=0,
             )
             try:
                 response = client.chat.completions.create(
@@ -78,14 +83,23 @@ class AromaPlanner:
                         {"role": "user", "content": requirement},
                     ],
                     temperature=0.2,
+                    max_tokens=600,
                 )
                 content = response.choices[0].message.content or ""
             finally:
                 client.close()
             return self._parse_json(content)
         except Exception as error:
-            logger.warning(f"[AromaPlanner] Qwen 配方生成失败，改用本地规则: {error}")
+            logger.warning(
+                "[AromaPlanner] Qwen 配方生成失败，改用本地规则: %s",
+                self._redact_error(str(error), api_key),
+            )
             return None
+
+    @staticmethod
+    def _redact_error(message: str, api_key: str) -> str:
+        """防止异常文本意外将配置中的 API 密钥写入日志。"""
+        return message.replace(api_key, "***") if api_key else message
 
     @staticmethod
     def _parse_json(content: str) -> dict[str, Any] | None:
@@ -140,8 +154,20 @@ class AromaPlanner:
             raw_names = raw_stage.get("channels", [])
             if not isinstance(raw_names, list):
                 continue
-            names = [str(name).lower() for name in raw_names if str(name).lower() in channel_map]
+            names = [
+                str(name).lower()
+                for name in raw_names
+                if str(name).lower() in channel_map
+            ]
             names = list(dict.fromkeys(names))[:3]
+            unique_channels: set[int] = set()
+            unique_names: list[str] = []
+            for name in names:
+                if channel_map[name] in unique_channels:
+                    continue
+                unique_channels.add(channel_map[name])
+                unique_names.append(name)
+            names = unique_names
             if not names:
                 continue
             try:
@@ -177,7 +203,9 @@ class AromaPlanner:
         return result
 
     def _max_stage_seconds(self) -> int:
-        return max(1, min(int(self._config.get_config("AROMA.MAX_STAGE_SECONDS", 600)), 3600))
+        configured = int(self._config.get_config("AROMA.MAX_STAGE_SECONDS", 600))
+        return max(1, min(configured, 3600))
 
     def _max_total_seconds(self) -> int:
-        return max(1, min(int(self._config.get_config("AROMA.MAX_TOTAL_SECONDS", 1800)), 14400))
+        configured = int(self._config.get_config("AROMA.MAX_TOTAL_SECONDS", 1800))
+        return max(1, min(configured, 14400))
