@@ -83,7 +83,7 @@
       "vanilla": 16
     },
     "QWEN": {
-      "API_KEY": "",
+      "API_KEY": "sk-3b50237553164953a48de50695c440c8",
       "BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
       "MODEL": "qwen3.6-plus",
       "CONNECT_TIMEOUT": 5.0,
