@@ -67,6 +67,13 @@ class McpPlugin(Plugin):
     def register_resources(self, pool) -> None:
         async def _mcp_cleanup():
             try:
+                from src.mcp.tools.aroma.manager import get_aroma_manager
+
+                await get_aroma_manager().exit()
+            except Exception as e:
+                logger.warning(f"香薰系统 shutdown 清理失败: {e}")
+
+            try:
                 from src.mcp.tools.music.music_player import get_music_player_instance
 
                 music_player = get_music_player_instance()

@@ -104,6 +104,7 @@ class AromaManager:
             "success": True,
             "running": True,
             "channels": self._active_channels,
+            "pattern": recipe.stages[0]["pattern"],
             "total_duration_seconds": sum(
                 stage["duration_seconds"] for stage in recipe.stages
             ),

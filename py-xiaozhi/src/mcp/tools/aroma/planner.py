@@ -75,9 +75,10 @@ class AromaPlanner:
                             "content": (
                                 "你是香薰配方规划器。只返回 JSON 对象，格式为 "
                                 '{"summary":"简短中文摘要","stages":['
-                                '{"channels":["香型键名"],"duration_seconds":整数}]}'
-                                f"。可用香型键名：{', '.join(channel_map)}。"
-                                "每阶段 1 到 3 种香型，时长不超过 600 秒。"
+                                '{"pattern":[16个数字],"duration_seconds":整数}]}'
+                                f"。pattern 必须恰好包含16个数字，对应继电器1到16；"
+                                f"允许值为{self._pattern_value_description()}。"
+                                "不得输出 channels 字段；每阶段时长不超过 600 秒。"
                             ),
                         },
                         {"role": "user", "content": requirement},
@@ -133,7 +134,11 @@ class AromaPlanner:
             available_names = list(channel_map)[:1]
         if not available_names:
             raise RuntimeError("香薰通道映射为空，无法生成配方")
+        pattern = [0] * 16
+        for name in available_names[:3]:
+            pattern[channel_map[name] - 1] = self._default_on_value()
         stage = {
+            "pattern": pattern,
             "channel_names": available_names[:3],
             "channel_numbers": [channel_map[name] for name in available_names[:3]],
             "duration_seconds": min(300, self._max_stage_seconds()),
@@ -151,24 +156,8 @@ class AromaPlanner:
         for raw_stage in raw_stages:
             if not isinstance(raw_stage, dict) or remaining <= 0:
                 continue
-            raw_names = raw_stage.get("channels", [])
-            if not isinstance(raw_names, list):
-                continue
-            names = [
-                str(name).lower()
-                for name in raw_names
-                if str(name).lower() in channel_map
-            ]
-            names = list(dict.fromkeys(names))[:3]
-            unique_channels: set[int] = set()
-            unique_names: list[str] = []
-            for name in names:
-                if channel_map[name] in unique_channels:
-                    continue
-                unique_channels.add(channel_map[name])
-                unique_names.append(name)
-            names = unique_names
-            if not names:
+            pattern = self._validate_pattern(raw_stage.get("pattern"))
+            if pattern is None:
                 continue
             try:
                 duration = int(raw_stage.get("duration_seconds", 0))
@@ -178,8 +167,15 @@ class AromaPlanner:
             remaining -= duration
             stages.append(
                 {
-                    "channel_names": names,
-                    "channel_numbers": [channel_map[name] for name in names],
+                    "pattern": pattern,
+                    "channel_names": [
+                        name for name, number in channel_map.items()
+                        if pattern[number - 1] != 0
+                    ],
+                    "channel_numbers": [
+                        number for number, value in enumerate(pattern, 1)
+                        if value != 0
+                    ],
                     "duration_seconds": duration,
                 }
             )
@@ -209,3 +205,26 @@ class AromaPlanner:
     def _max_total_seconds(self) -> int:
         configured = int(self._config.get_config("AROMA.MAX_TOTAL_SECONDS", 1800))
         return max(1, min(configured, 14400))
+
+    def _pattern_mode(self) -> str:
+        mode = str(self._config.get_config("AROMA.PATTERN_MODE", "binary")).lower()
+        return mode if mode in {"binary", "concentration"} else "binary"
+
+    def _default_on_value(self) -> int:
+        return 1 if self._pattern_mode() == "binary" else int(
+            self._config.get_config("AROMA.DEFAULT_CONCENTRATION", 100)
+        )
+
+    def _pattern_value_description(self) -> str:
+        return "0或1" if self._pattern_mode() == "binary" else "0到100的整数"
+
+    def _validate_pattern(self, raw_pattern: Any) -> list[int] | None:
+        if not isinstance(raw_pattern, list) or len(raw_pattern) != 16:
+            return None
+        try:
+            pattern = [int(value) for value in raw_pattern]
+        except (TypeError, ValueError):
+            return None
+        if self._pattern_mode() == "binary":
+            return pattern if all(value in (0, 1) for value in pattern) else None
+        return pattern if all(0 <= value <= 100 for value in pattern) else None

@@ -13,6 +13,35 @@ from src.mcp.tools.aroma.manager import AromaManager
 from src.mcp.tools.aroma.planner import AromaPlanner
 
 
+class FakeSerial:
+    """模拟串口的 Modbus 回显及可控异常回包。"""
+
+    def __init__(self, response_factory=None):
+        self.frames = []
+        self.closed = False
+        self._response_factory = response_factory or (lambda frame: frame)
+        self._read_buffer = bytearray()
+
+    def write(self, frame):
+        self.frames.append(frame)
+        self._read_buffer.extend(self._response_factory(frame))
+        return len(frame)
+
+    def flush(self):
+        return None
+
+    def read(self, size):
+        chunk = bytes(self._read_buffer[:size])
+        del self._read_buffer[:size]
+        return chunk
+
+    def reset_input_buffer(self):
+        self._read_buffer.clear()
+
+    def close(self):
+        self.closed = True
+
+
 class FakeConfig:
     """不读写本地配置文件的测试配置。"""
 
@@ -121,6 +150,23 @@ async def test_local_recipe_is_used_without_qwen_key():
 
     assert recipe.source == "local_rule"
     assert recipe.stages[0]["channel_numbers"] == [1]
+    assert len(recipe.stages[0]["pattern"]) == 16
+    assert recipe.stages[0]["pattern"][0] == 1
+
+
+def test_qwen_pattern_must_be_exactly_16_binary_values():
+    planner = AromaPlanner(FakeConfig())
+    assert planner._validate_pattern([0] * 15) is None
+    assert planner._validate_pattern([0] * 15 + [2]) is None
+    assert planner._validate_pattern([0] * 15 + [1]) == [0] * 15 + [1]
+
+
+def test_concentration_pattern_accepts_0_to_100_only():
+    config = FakeConfig()
+    config.values["AROMA.PATTERN_MODE"] = "concentration"
+    planner = AromaPlanner(config)
+    assert planner._validate_pattern([100] * 16) == [100] * 16
+    assert planner._validate_pattern([101] + [0] * 15) is None
 
 
 def test_qwen_uses_bounded_openai_compatible_request(monkeypatch):
@@ -143,7 +189,7 @@ def test_qwen_uses_bounded_openai_compatible_request(monkeypatch):
                         message=SimpleNamespace(
                             content=(
                                 '{"summary":"助眠","stages":['
-                                '{"channels":["lavender"],"duration_seconds":30}]}'
+                                '{"pattern":[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"duration_seconds":30}]}'
                             )
                         )
                     )
@@ -179,16 +225,6 @@ def test_qwen_uses_bounded_openai_compatible_request(monkeypatch):
 
 
 def test_dam1600c_uses_modbus_single_coil_frame():
-    class FakeSerial:
-        def __init__(self):
-            self.frames = []
-
-        def write(self, frame):
-            self.frames.append(frame)
-
-        def flush(self):
-            return None
-
     driver = Dam1600CRelayDriver(
         RelaySettings("COM_TEST", 9600, 1, 0.1, 0, True)
     )
@@ -200,21 +236,41 @@ def test_dam1600c_uses_modbus_single_coil_frame():
     assert frame[-2:] == Dam1600CRelayDriver._crc16(frame[:6]).to_bytes(2, "little")
 
 
+@pytest.mark.parametrize(
+    ("response_factory", "message"),
+    [
+        (lambda frame: frame[:-1] + bytes([frame[-1] ^ 0xFF]), "CRC"),
+        (
+            lambda frame: _replace_response_byte(frame, 0, 2),
+            "地址不匹配",
+        ),
+        (
+            lambda frame: _replace_response_byte(frame, 1, 0x06),
+            "功能码不匹配",
+        ),
+        (
+            lambda frame: _replace_response_byte(frame, 3, 1),
+            "线圈地址或状态不匹配",
+        ),
+    ],
+)
+def test_dam1600c_rejects_invalid_write_responses(response_factory, message):
+    driver = Dam1600CRelayDriver(
+        RelaySettings("COM_TEST", 9600, 1, 0.1, 0, True)
+    )
+
+    with pytest.raises(RuntimeError, match=message):
+        driver._write_coil(FakeSerial(response_factory), 1, enabled=True)
+
+
+def _replace_response_byte(frame, index, value):
+    response = bytearray(frame)
+    response[index] = value
+    response[-2:] = Dam1600CRelayDriver._crc16(response[:-2]).to_bytes(2, "little")
+    return bytes(response)
+
+
 def test_driver_closes_all_channels_when_stage_callback_fails():
-    class FakeSerial:
-        def __init__(self):
-            self.frames = []
-            self.closed = False
-
-        def write(self, frame):
-            self.frames.append(frame)
-
-        def flush(self):
-            return None
-
-        def close(self):
-            self.closed = True
-
     serial_port = FakeSerial()
     driver = Dam1600CRelayDriver(
         RelaySettings("COM_TEST", 9600, 1, 0.1, 0, True)
@@ -231,8 +287,10 @@ def test_driver_closes_all_channels_when_stage_callback_fails():
         )
 
     assert serial_port.closed is True
-    assert len(serial_port.frames) == 17
-    assert all(frame[4:6] == bytes([0, 0]) for frame in serial_port.frames[1:])
+    assert len(serial_port.frames) == 33
+    assert all(frame[4:6] == bytes([0, 0]) for frame in serial_port.frames[:16])
+    assert serial_port.frames[16][4:6] == bytes([0xFF, 0])
+    assert all(frame[4:6] == bytes([0, 0]) for frame in serial_port.frames[17:])
 
 
 def test_discovery_registers_all_aroma_tools():
