@@ -1,12 +1,19 @@
 {
   "SYSTEM_OPTIONS": {
-    "CLIENT_ID": null,
-    "DEVICE_ID": null,
+    "CLIENT_ID": "9beb51d9-80da-4d26-b155-fa523c894f90",
+    "DEVICE_ID": "74:5d:22:2e:eb:64",
     "NETWORK": {
       "OTA_VERSION_URL": "https://api.tenclass.net/xiaozhi/ota/",
-      "WEBSOCKET_URL": null,
-      "WEBSOCKET_ACCESS_TOKEN": null,
-      "MQTT_INFO": null,
+      "WEBSOCKET_URL": "wss://api.tenclass.net/xiaozhi/v1/",
+      "WEBSOCKET_ACCESS_TOKEN": "test-token",
+      "MQTT_INFO": {
+        "endpoint": "mqtt.xiaozhi.me",
+        "client_id": "GID_test@@@74_5d_22_2e_eb_64@@@9beb51d9-80da-4d26-b155-fa523c894f90",
+        "username": "eyJpcCI6IjU5LjY0LjEyOS4yNDEiLCJjIjowfQ==",
+        "password": "W5RZ7cI7BpJD0jNI0JswwemFHnp7H8f/4RwRHiNUo3I=",
+        "publish_topic": "device-server",
+        "subscribe_topic": "null"
+      },
       "ACTIVATION_VERSION": "v2",
       "AUTHORIZATION_URL": "https://xiaozhi.me/"
     }
@@ -76,7 +83,7 @@
       "vanilla": 16
     },
     "QWEN": {
-      "API_KEY": "sk-3b50237553164953a48de50695c440c8",
+      "API_KEY": "",
       "BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
       "MODEL": "qwen3.6-plus",
       "CONNECT_TIMEOUT": 5.0,
@@ -85,11 +92,31 @@
   },
   "SHORTCUTS": {
     "ENABLED": true,
-    "MANUAL_PRESS": {"modifier": "ctrl", "key": "j", "description": "按住说话"},
-    "AUTO_TOGGLE": {"modifier": "ctrl", "key": "k", "description": "自动对话"},
-    "ABORT": {"modifier": "ctrl", "key": "q", "description": "中断对话"},
-    "MODE_TOGGLE": {"modifier": "ctrl", "key": "m", "description": "切换模式"},
-    "WINDOW_TOGGLE": {"modifier": "ctrl", "key": "w", "description": "显示/隐藏窗口"}
+    "MANUAL_PRESS": {
+      "modifier": "ctrl",
+      "key": "j",
+      "description": "按住说话"
+    },
+    "AUTO_TOGGLE": {
+      "modifier": "ctrl",
+      "key": "k",
+      "description": "自动对话"
+    },
+    "ABORT": {
+      "modifier": "ctrl",
+      "key": "q",
+      "description": "中断对话"
+    },
+    "MODE_TOGGLE": {
+      "modifier": "ctrl",
+      "key": "m",
+      "description": "切换模式"
+    },
+    "WINDOW_TOGGLE": {
+      "modifier": "ctrl",
+      "key": "w",
+      "description": "显示/隐藏窗口"
+    }
   },
   "AEC_OPTIONS": {
     "ENABLED": false,
@@ -100,13 +127,13 @@
   },
   "AUDIO_DEVICES": {
     "input_device_id": null,
-    "input_device_name": null,
+    "input_device_name": "麦克风阵列 (Realtek(R) Audio)",
     "output_device_id": null,
-    "output_device_name": null,
-    "input_sample_rate": null,
-    "output_sample_rate": null,
-    "input_channels": null,
-    "output_channels": null,
+    "output_device_name": "扬声器 (Realtek(R) Audio)",
+    "input_sample_rate": 44100,
+    "output_sample_rate": 44100,
+    "input_channels": 1,
+    "output_channels": 2,
     "opus_output_sample_rate": 24000,
     "frame_duration": 20
   },

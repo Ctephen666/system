@@ -42,7 +42,8 @@ class SettingsModel(BaseModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._config_manager = ConfigManager.get_instance()
-        self._config_path = get_user_data_dir() / "config" / "config.json"
+        # 与运行时 ConfigManager 使用同一个配置来源（仓库配置、环境变量或兼容旧目录）。
+        self._config_path = self._config_manager.config_file
         self._config: dict = {}
 
         # 音频设备
@@ -109,8 +110,9 @@ class SettingsModel(BaseModel):
     def save(self):
         """保存配置到文件."""
         try:
-            with open(self._config_path, "w", encoding="utf-8") as f:
-                json.dump(self._config, f, ensure_ascii=False, indent=2)
+            if not self._config_manager.save_config(self._config):
+                raise OSError("配置管理器拒绝写入配置文件")
+            self._config_path = self._config_manager.config_file
             logger.info("设置已保存")
             self.statusMessage.emit("配置已保存")
             # 发送配置保存信号，触发热重载
@@ -127,6 +129,123 @@ class SettingsModel(BaseModel):
         self._load_cameras()
         self.settingsChanged.emit()
         logger.info("设置已重新加载")
+
+    # ========== 香薰系统配置 ==========
+
+    def _get_aromaEnabled(self) -> bool:
+        return bool(self._get_value("AROMA.ENABLED", False))
+
+    def _set_aromaEnabled(self, value: bool):
+        self._set_value("AROMA.ENABLED", bool(value))
+
+    aromaEnabled = Property(bool, _get_aromaEnabled, _set_aromaEnabled, notify=settingsChanged)
+
+    def _get_aromaSerialPort(self) -> str:
+        return str(self._get_value("AROMA.SERIAL_PORT", ""))
+
+    def _set_aromaSerialPort(self, value: str):
+        self._set_value("AROMA.SERIAL_PORT", str(value).strip())
+
+    aromaSerialPort = Property(str, _get_aromaSerialPort, _set_aromaSerialPort, notify=settingsChanged)
+
+    def _get_aromaBaudrate(self) -> int:
+        return int(self._get_value("AROMA.BAUDRATE", 9600))
+
+    def _set_aromaBaudrate(self, value: int):
+        self._set_value("AROMA.BAUDRATE", max(300, int(value)))
+
+    aromaBaudrate = Property(int, _get_aromaBaudrate, _set_aromaBaudrate, notify=settingsChanged)
+
+    def _get_aromaDeviceAddress(self) -> int:
+        return int(self._get_value("AROMA.DEVICE_ADDRESS", 1))
+
+    def _set_aromaDeviceAddress(self, value: int):
+        self._set_value("AROMA.DEVICE_ADDRESS", min(247, max(1, int(value))))
+
+    aromaDeviceAddress = Property(int, _get_aromaDeviceAddress, _set_aromaDeviceAddress, notify=settingsChanged)
+
+    def _get_aromaSerialTimeout(self) -> float:
+        return float(self._get_value("AROMA.SERIAL_TIMEOUT", 1.0))
+
+    def _set_aromaSerialTimeout(self, value: float):
+        self._set_value("AROMA.SERIAL_TIMEOUT", min(30.0, max(0.05, float(value))))
+
+    aromaSerialTimeout = Property(float, _get_aromaSerialTimeout, _set_aromaSerialTimeout, notify=settingsChanged)
+
+    def _get_aromaRetries(self) -> int:
+        return int(self._get_value("AROMA.RETRIES", 1))
+
+    def _set_aromaRetries(self, value: int):
+        self._set_value("AROMA.RETRIES", min(5, max(0, int(value))))
+
+    aromaRetries = Property(int, _get_aromaRetries, _set_aromaRetries, notify=settingsChanged)
+
+    def _get_aromaActiveHigh(self) -> bool:
+        return bool(self._get_value("AROMA.ACTIVE_HIGH", True))
+
+    def _set_aromaActiveHigh(self, value: bool):
+        self._set_value("AROMA.ACTIVE_HIGH", bool(value))
+
+    aromaActiveHigh = Property(bool, _get_aromaActiveHigh, _set_aromaActiveHigh, notify=settingsChanged)
+
+    def _get_aromaDefaultConcentration(self) -> int:
+        return int(self._get_value("AROMA.DEFAULT_CONCENTRATION", 100))
+
+    def _set_aromaDefaultConcentration(self, value: int):
+        self._set_value("AROMA.DEFAULT_CONCENTRATION", min(100, max(1, int(value))))
+
+    aromaDefaultConcentration = Property(int, _get_aromaDefaultConcentration, _set_aromaDefaultConcentration, notify=settingsChanged)
+
+    def _get_aromaPatternMode(self) -> str:
+        return str(self._get_value("AROMA.PATTERN_MODE", "binary"))
+
+    def _set_aromaPatternMode(self, value: str):
+        mode = str(value).lower()
+        self._set_value("AROMA.PATTERN_MODE", mode if mode in {"binary", "concentration"} else "binary")
+
+    aromaPatternMode = Property(str, _get_aromaPatternMode, _set_aromaPatternMode, notify=settingsChanged)
+
+    def _get_aromaQwenBaseUrl(self) -> str:
+        return str(self._get_value("AROMA.QWEN.BASE_URL", ""))
+
+    def _set_aromaQwenBaseUrl(self, value: str):
+        self._set_value("AROMA.QWEN.BASE_URL", str(value).strip())
+
+    aromaQwenBaseUrl = Property(str, _get_aromaQwenBaseUrl, _set_aromaQwenBaseUrl, notify=settingsChanged)
+
+    def _get_aromaQwenModel(self) -> str:
+        return str(self._get_value("AROMA.QWEN.MODEL", "qwen3.6-plus"))
+
+    def _set_aromaQwenModel(self, value: str):
+        self._set_value("AROMA.QWEN.MODEL", str(value).strip())
+
+    aromaQwenModel = Property(str, _get_aromaQwenModel, _set_aromaQwenModel, notify=settingsChanged)
+
+    def _get_aromaQwenApiKey(self) -> str:
+        return str(self._get_value("AROMA.QWEN.API_KEY", ""))
+
+    def _set_aromaQwenApiKey(self, value: str):
+        self._set_value("AROMA.QWEN.API_KEY", str(value).strip())
+
+    aromaQwenApiKey = Property(str, _get_aromaQwenApiKey, _set_aromaQwenApiKey, notify=settingsChanged)
+
+    def _get_aromaChannelMap(self) -> str:
+        return json.dumps(self._get_value("AROMA.CHANNEL_MAP", {}), ensure_ascii=False)
+
+    def _set_aromaChannelMap(self, value: str):
+        try:
+            mapping = json.loads(value)
+            if not isinstance(mapping, dict) or len(mapping) != 16:
+                raise ValueError("必须配置16个香型")
+            channels = [int(channel) for channel in mapping.values()]
+            if sorted(channels) != list(range(1, 17)):
+                raise ValueError("通道号必须为1到16且不能重复")
+            self._set_value("AROMA.CHANNEL_MAP", {str(name): channel for name, channel in mapping.items()})
+            self.statusMessage.emit("香薰16路映射已更新")
+        except (TypeError, ValueError, json.JSONDecodeError) as error:
+            self.statusMessage.emit(f"香薰映射无效：{error}")
+
+    aromaChannelMap = Property(str, _get_aromaChannelMap, _set_aromaChannelMap, notify=settingsChanged)
 
     # ========== 系统选项 ==========
 

@@ -191,6 +191,15 @@ class ConfigManager:
             logger.error("配置更新错误 %s: %s", path, error, exc_info=True)
             return False
 
+    def save_config(self, config: dict[str, Any]) -> bool:
+        """保存完整配置，复用原子写入、损坏保护和只读回退逻辑。"""
+        if not isinstance(config, dict):
+            return False
+        if not self._save_config(deepcopy(config)):
+            return False
+        self._config = self._merge_configs(create_default_config(), config)
+        return True
+
     def reload_config(self) -> bool:
         """重新加载配置文件。"""
         try:
