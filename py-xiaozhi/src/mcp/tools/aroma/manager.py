@@ -64,6 +64,11 @@ class AromaManager:
         self._starting_session_id = session_id
         try:
             recipe = await self._planner.create_recipe(requirement.strip())
+        except asyncio.CancelledError:
+            self._session_id += 1
+            self._clear_starting(session_id)
+            logger.info("[AromaManager] 香薰配方规划已取消")
+            raise
         except Exception as error:
             logger.error(f"[AromaManager] 配方生成失败: {error}", exc_info=True)
             self._clear_starting(session_id)

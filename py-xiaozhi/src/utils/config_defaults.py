@@ -63,6 +63,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "DEFAULT_CONCENTRATION": 100,
         "MAX_STAGE_SECONDS": 600,
         "MAX_TOTAL_SECONDS": 1800,
+        "TOTAL_DURATION_SECONDS": 30,
         "CHANNEL_MAP": {
             "lavender": 1,
             "bergamot": 2,

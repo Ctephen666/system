@@ -72,14 +72,7 @@ class AromaPlanner:
                     messages=[
                         {
                             "role": "system",
-                            "content": (
-                                "你是香薰配方规划器。只返回 JSON 对象，格式为 "
-                                '{"summary":"简短中文摘要","stages":['
-                                '{"pattern":[16个数字],"duration_seconds":整数}]}'
-                                f"。pattern 必须恰好包含16个数字，对应继电器1到16；"
-                                f"允许值为{self._pattern_value_description()}。"
-                                "不得输出 channels 字段；每阶段时长不超过 600 秒。"
-                            ),
+                            "content": self._system_prompt(channel_map),
                         },
                         {"role": "user", "content": requirement},
                     ],
@@ -141,7 +134,7 @@ class AromaPlanner:
             "pattern": pattern,
             "channel_names": available_names[:3],
             "channel_numbers": [channel_map[name] for name in available_names[:3]],
-            "duration_seconds": min(300, self._max_stage_seconds()),
+            "duration_seconds": self._target_total_seconds(),
         }
         return AromaRecipe(summary=summary, stages=[stage], source="local_rule")
 
@@ -152,7 +145,7 @@ class AromaPlanner:
         if not isinstance(raw_stages, list):
             return None
         stages: list[dict] = []
-        remaining = self._max_total_seconds()
+        remaining = self._target_total_seconds()
         for raw_stage in raw_stages:
             if not isinstance(raw_stage, dict) or remaining <= 0:
                 continue
@@ -181,6 +174,9 @@ class AromaPlanner:
             )
         if not stages:
             return None
+        total = sum(stage["duration_seconds"] for stage in stages)
+        if total < self._target_total_seconds():
+            stages[-1]["duration_seconds"] += self._target_total_seconds() - total
         summary = str(data.get("summary", "个性化香薰方案")).strip()[:80]
         return AromaRecipe(summary=summary or "个性化香薰方案", stages=stages, source=source)
 
@@ -206,6 +202,15 @@ class AromaPlanner:
         configured = int(self._config.get_config("AROMA.MAX_TOTAL_SECONDS", 1800))
         return max(1, min(configured, 14400))
 
+    def _target_total_seconds(self) -> int:
+        configured = int(
+            self._config.get_config(
+                "AROMA.TOTAL_DURATION_SECONDS",
+                self._config.get_config("AROMA.MAX_TOTAL_SECONDS", 30),
+            )
+        )
+        return max(1, min(configured, self._max_total_seconds()))
+
     def _pattern_mode(self) -> str:
         mode = str(self._config.get_config("AROMA.PATTERN_MODE", "binary")).lower()
         return mode if mode in {"binary", "concentration"} else "binary"
@@ -217,6 +222,44 @@ class AromaPlanner:
 
     def _pattern_value_description(self) -> str:
         return "0或1" if self._pattern_mode() == "binary" else "0到100的整数"
+
+    def _system_prompt(self, channel_map: dict[str, int]) -> str:
+        benefits = {
+            "lavender": "放松、助眠",
+            "bergamot": "舒缓情绪",
+            "rosemary": "专注、清醒",
+            "lemon": "清新、提神",
+            "peppermint": "强提神",
+            "chamomile": "安抚、助眠",
+            "cedarwood": "沉静、稳定",
+            "eucalyptus": "清爽",
+            "jasmine": "舒缓、愉悦",
+            "rose": "放松、愉悦",
+            "sandalwood": "安定、冥想",
+            "ylang_ylang": "舒缓压力",
+            "tea_tree": "清新",
+            "orange": "愉悦、提振",
+            "frankincense": "沉静、冥想",
+            "vanilla": "温暖、放松",
+        }
+        mapping_lines = []
+        for name, number in sorted(channel_map.items(), key=lambda item: item[1]):
+            mapping_lines.append(
+                f"通道{number} / pattern第{number}位：{name}（{benefits.get(name, '按配置香型使用')}）"
+            )
+        mapping = "\n".join(mapping_lines)
+        return (
+            "你是香薰配方规划器，只能返回一个 JSON 对象，不得输出 Markdown、解释或额外文字。\n"
+            'JSON 格式：{"summary":"简短中文摘要","stages":[{"pattern":[16个数字],"duration_seconds":整数}]}\n'
+            "通道和香型映射如下（pattern 第 N 位严格对应继电器 N，不能调整顺序）：\n"
+            f"{mapping}\n"
+            f"pattern 必须恰好 16 个值；当前允许值为{self._pattern_value_description()}。\n"
+            "只输出 pattern，不得输出 channels、channel_numbers 或其他控制字段。\n"
+            "根据用户的情绪、场景和目标选择 1～4 个合适香型；不确定时选择较温和的组合。\n"
+            f"所有阶段总时长必须严格为 {self._target_total_seconds()} 秒；最多输出 4 个阶段。\n"
+            "不要同时堆叠所有香型，不要输出不存在于映射中的香型，不要编造硬件通道。\n"
+            "用户需求将作为下一条消息提供。"
+        )
 
     def _validate_pattern(self, raw_pattern: Any) -> list[int] | None:
         if not isinstance(raw_pattern, list) or len(raw_pattern) != 16:

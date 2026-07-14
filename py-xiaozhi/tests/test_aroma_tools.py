@@ -169,6 +169,35 @@ def test_concentration_pattern_accepts_0_to_100_only():
     assert planner._validate_pattern([101] + [0] * 15) is None
 
 
+def test_qwen_prompt_contains_channel_mapping_and_safety_contract():
+    planner = AromaPlanner(FakeConfig())
+    prompt = planner._system_prompt({"lavender": 1, "bergamot": 2})
+    assert "通道1" in prompt
+    assert "pattern第1位" in prompt
+    assert "lavender" in prompt
+    assert "必须恰好 16" in prompt
+    assert "不得输出 channels" in prompt
+
+
+def test_recipe_total_duration_is_normalized_to_target():
+    config = FakeConfig()
+    config.values["AROMA.TOTAL_DURATION_SECONDS"] = 30
+    planner = AromaPlanner(config)
+    recipe = planner._validate_recipe(
+        {
+            "summary": "test",
+            "stages": [
+                {"pattern": [1] + [0] * 15, "duration_seconds": 10},
+                {"pattern": [0, 1] + [0] * 14, "duration_seconds": 100},
+            ],
+        },
+        {"lavender": 1, "bergamot": 2},
+        "qwen",
+    )
+    assert recipe is not None
+    assert sum(stage["duration_seconds"] for stage in recipe.stages) == 30
+
+
 def test_qwen_uses_bounded_openai_compatible_request(monkeypatch):
     config = FakeConfig()
     config.values.update(

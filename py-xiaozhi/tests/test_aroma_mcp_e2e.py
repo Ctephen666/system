@@ -1,6 +1,8 @@
 """香薰 MCP JSON-RPC 端到端调用测试。"""
 
 import json
+import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -40,3 +42,43 @@ async def test_aroma_mcp_json_rpc_enter_status_exit():
     assert replies[0]["result"]["mode_active"] is True
     assert replies[1]["result"]["mode_active"] is True
     assert replies[2]["result"]["mode_active"] is False
+
+
+@pytest.mark.asyncio
+async def test_mcp_cancelled_notification_cancels_pending_tool():
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def slow_call(_arguments):
+        started.set()
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    server = McpServer()
+    server.tools = [SimpleNamespace(name="slow", call=slow_call)]
+    server.set_send_callback(lambda _payload: asyncio.sleep(0))
+    call_task = asyncio.create_task(
+        server.parse_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "tools/call",
+                "params": {"name": "slow", "arguments": {}},
+            }
+        )
+    )
+    await started.wait()
+    await server.parse_message(
+        {
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "id": "10",
+            "params": {"reason": "test"},
+        }
+    )
+    await call_task
+    assert cancelled.is_set()
+    assert not server._pending_calls

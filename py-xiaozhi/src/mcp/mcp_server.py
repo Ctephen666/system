@@ -3,6 +3,7 @@ MCP Server Implementation for Python
 Reference: https://modelcontextprotocol.io/specification/2024-11-05
 """
 
+import asyncio
 import json
 from collections.abc import Callable
 from typing import Any
@@ -34,6 +35,7 @@ class McpServer:
         self.tools: list[McpTool] = []
         self._send_callback: Callable | None = None
         self._camera = None
+        self._pending_calls: dict[str, Any] = {}
 
     def set_send_callback(self, callback: Callable):
         """
@@ -100,13 +102,19 @@ class McpServer:
             if not method:
                 logger.error("Missing method")
                 return
+            params = data.get("params", {})
 
             # 忽略通知
             if method.startswith("notifications"):
+                if method == "notifications/cancelled":
+                    cancelled_id = data.get("id") or params.get("requestId")
+                    pending = self._pending_calls.pop(str(cancelled_id), None)
+                    if pending is not None and not pending.done():
+                        pending.cancel()
+                        logger.info("[MCP] 已取消工具请求: %s", cancelled_id)
                 logger.info(f"[MCP] 忽略通知消息: {method}")
                 return
 
-            params = data.get("params", {})
             request_id = data.get("id")
 
             if request_id is None:
@@ -232,15 +240,22 @@ class McpServer:
         logger.info(f"[MCP] 开始执行工具 {tool_name}, 参数: {arguments}")
 
         # 异步调用工具
+        task = asyncio.create_task(tool.call(arguments), name=f"mcp:{tool_name}")
+        self._pending_calls[str(request_id)] = task
         try:
-            result = await tool.call(arguments)
+            result = await task
             logger.info(f"[MCP] 工具 {tool_name} 执行成功，结果: {result}")
             await self._reply_result(request_id, json.loads(result))
+        except asyncio.CancelledError:
+            logger.info("[MCP] 工具请求已取消: %s (ID=%s)", tool_name, request_id)
+            return
         except Exception as e:
             logger.error(
                 f"[MCP] 工具 {tool_name} 执行失败: {e}", exc_info=True
             )
             await self._reply_error(request_id, str(e))
+        finally:
+            self._pending_calls.pop(str(request_id), None)
 
     async def _parse_capabilities(self, capabilities):
         """
