@@ -27,7 +27,7 @@
     "KEYWORDS_SCORE": 1.8,
     "KEYWORDS_THRESHOLD": 0.2,
     "NUM_TRAILING_BLANKS": 1,
-    "WAKE_WORD": "你好小智",
+    "WAKE_WORD": "智能大师",
     "WAKE_WORD_LANG": "zh",
     "WAKE_RESPONSE_TTS_ENABLED": true,
     "WAKE_RESPONSE_TTS_MODE": "server",
@@ -53,8 +53,8 @@
     "models": "glm-4v-plus"
   },
   "AROMA": {
-    "ENABLED": false,
-    "SERIAL_PORT": "/dev/ttyUSB0",
+    "ENABLED": true,
+    "SERIAL_PORT": "/dev/ttyACM0",
     "BAUDRATE": 9600,
     "DEVICE_ADDRESS": 1,
     "SERIAL_TIMEOUT": 1.0,
@@ -86,9 +86,9 @@
     "QWEN": {
       "API_KEY": "sk-3b50237553164953a48de50695c440c8",
       "BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "MODEL": "qwen3.6-plus",
-      "CONNECT_TIMEOUT": 5.0,
-      "READ_TIMEOUT": 20.0
+      "MODEL": "qwen3.7-plus",
+      "CONNECT_TIMEOUT": 10.0,
+      "READ_TIMEOUT": 60.0
     }
   },
   "SHORTCUTS": {
