@@ -82,13 +82,6 @@
       "orange": 14,
       "frankincense": 15,
       "vanilla": 16
-    },
-    "QWEN": {
-      "API_KEY": "sk-3b50237553164953a48de50695c440c8",
-      "BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "MODEL": "qwen3.7-plus",
-      "CONNECT_TIMEOUT": 10.0,
-      "READ_TIMEOUT": 60.0
     }
   },
   "SHORTCUTS": {

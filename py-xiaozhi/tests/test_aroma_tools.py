@@ -1,9 +1,7 @@
 """香薰 MCP 工具的离线测试。"""
 
 import asyncio
-import sys
 from threading import Event
-from types import SimpleNamespace
 
 import pytest
 
@@ -57,7 +55,6 @@ class FakeConfig:
             "AROMA.MAX_STAGE_SECONDS": 60,
             "AROMA.MAX_TOTAL_SECONDS": 120,
             "AROMA.CHANNEL_MAP": {"lavender": 1, "bergamot": 2},
-            "AROMA.QWEN.API_KEY": "",
         }
 
     def get_config(self, path, default=None):
@@ -145,112 +142,140 @@ async def test_exit_during_startup_unblocks_start_without_starting_hardware():
 
 
 @pytest.mark.asyncio
-async def test_local_recipe_is_used_without_qwen_key():
-    recipe = await AromaPlanner(FakeConfig()).create_recipe("我需要助眠")
+async def test_fixed_library_is_used_without_server_recipe():
+    recipe = await AromaPlanner(FakeConfig()).create_recipe("sleep")
 
-    assert recipe.source == "local_rule"
+    assert recipe.source == "fixed_library"
     assert recipe.stages[0]["channel_numbers"] == [1]
     assert len(recipe.stages[0]["pattern"]) == 16
     assert recipe.stages[0]["pattern"][0] == 1
 
 
-def test_qwen_pattern_must_be_exactly_16_binary_values():
-    planner = AromaPlanner(FakeConfig())
-    assert planner._validate_pattern([0] * 15) is None
-    assert planner._validate_pattern([0] * 15 + [2]) is None
-    assert planner._validate_pattern([0] * 15 + [1]) == [0] * 15 + [1]
-
-
-def test_concentration_pattern_accepts_0_to_100_only():
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("requirement", "expected_channels"),
+    [
+        ("\u52a9\u7720", [1, 6]),
+        ("\u4e13\u6ce8", [3, 4]),
+        ("\u63d0\u795e", [5, 4]),
+        ("\u653e\u677e", [1, 2]),
+    ],
+)
+async def test_fixed_library_selects_common_chinese_scenes(
+    requirement, expected_channels
+):
     config = FakeConfig()
-    config.values["AROMA.PATTERN_MODE"] = "concentration"
-    planner = AromaPlanner(config)
-    assert planner._validate_pattern([100] * 16) == [100] * 16
-    assert planner._validate_pattern([101] + [0] * 15) is None
+    config.values["AROMA.CHANNEL_MAP"] = {
+        "lavender": 1,
+        "bergamot": 2,
+        "rosemary": 3,
+        "lemon": 4,
+        "peppermint": 5,
+        "chamomile": 6,
+    }
+    recipe = await AromaPlanner(config).create_recipe(requirement)
+
+    assert recipe.source == "fixed_library"
+    assert recipe.stages[0]["channel_numbers"] == expected_channels
 
 
-def test_qwen_prompt_contains_channel_mapping_and_safety_contract():
+@pytest.mark.asyncio
+async def test_server_recipe_converts_aroma_names_to_pattern():
     planner = AromaPlanner(FakeConfig())
-    prompt = planner._system_prompt({"lavender": 1, "bergamot": 2})
-    assert "通道1" in prompt
-    assert "pattern第1位" in prompt
-    assert "lavender" in prompt
-    assert "必须恰好 16" in prompt
-    assert "不得输出 channels" in prompt
-
-
-def test_recipe_total_duration_is_normalized_to_target():
-    config = FakeConfig()
-    config.values["AROMA.TOTAL_DURATION_SECONDS"] = 30
-    planner = AromaPlanner(config)
-    recipe = planner._validate_recipe(
+    recipe = await planner.create_recipe(
+        "助眠",
         {
-            "summary": "test",
+            "summary": "晚间放松",
             "stages": [
-                {"pattern": [1] + [0] * 15, "duration_seconds": 10},
-                {"pattern": [0, 1] + [0] * 14, "duration_seconds": 100},
+                {"aromas": ["lavender", "bergamot"], "duration_seconds": 30}
             ],
         },
-        {"lavender": 1, "bergamot": 2},
-        "qwen",
     )
-    assert recipe is not None
-    assert sum(stage["duration_seconds"] for stage in recipe.stages) == 30
+    assert recipe.source == "xiaozhi_server"
+    assert recipe.stages[0]["channel_numbers"] == [1, 2]
+    assert recipe.stages[0]["pattern"][:2] == [1, 1]
 
 
-def test_qwen_uses_bounded_openai_compatible_request(monkeypatch):
+@pytest.mark.asyncio
+async def test_server_recipe_accepts_chinese_aroma_aliases():
     config = FakeConfig()
-    config.values.update(
+    config.values["AROMA.CHANNEL_MAP"] = {"rosemary": 3, "peppermint": 5}
+
+    recipe = await AromaPlanner(config).create_recipe(
+        "\u63d0\u795e",
         {
-            "AROMA.QWEN.API_KEY": "test-secret",
-            "AROMA.QWEN.BASE_URL": "https://example.invalid/compatible-mode/v1",
-            "AROMA.QWEN.MODEL": "qwen3.6-plus",
-        }
-    )
-    calls = {}
-
-    class FakeCompletions:
-        def create(self, **kwargs):
-            calls["request"] = kwargs
-            return SimpleNamespace(
-                choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(
-                            content=(
-                                '{"summary":"助眠","stages":['
-                                '{"pattern":[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"duration_seconds":30}]}'
-                            )
-                        )
-                    )
-                ]
-            )
-
-    class FakeOpenAI:
-        def __init__(self, **kwargs):
-            calls["client"] = kwargs
-            self._http_client = kwargs["http_client"]
-            self.chat = SimpleNamespace(completions=FakeCompletions())
-
-        def close(self):
-            self._http_client.close()
-            calls["closed"] = True
-
-    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
-
-    recipe = AromaPlanner(config)._create_qwen_recipe(
-        "我需要助眠", {"lavender": 1, "bergamot": 2}
+            "stages": [
+                {
+                    "aromas": ["\u8ff7\u8fed\u9999", "\u8584\u8377"],
+                    "duration_seconds": 30,
+                }
+            ]
+        },
     )
 
-    assert recipe["summary"] == "助眠"
-    assert calls["client"]["api_key"] == "test-secret"
-    assert calls["client"]["max_retries"] == 0
-    assert calls["request"]["model"] == "qwen3.6-plus"
-    assert calls["request"]["max_tokens"] == 600
-    assert calls["closed"] is True
-    assert (
-        AromaPlanner._redact_error("failed test-secret", "test-secret")
-        == "failed ***"
+    assert recipe.source == "xiaozhi_server"
+    assert recipe.stages[0]["channel_names"] == ["rosemary", "peppermint"]
+    assert recipe.stages[0]["channel_numbers"] == [3, 5]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "server_recipe",
+    [
+        "not json",
+        '{"stages": []}',
+        '{"stages":[{"aromas":["unknown"],"duration_seconds":30}]}',
+        '{"stages":[{"aromas":["lavender"],"duration_seconds":0}]}',
+    ],
+)
+async def test_invalid_server_recipe_uses_fixed_library(server_recipe):
+    recipe = await AromaPlanner(FakeConfig()).create_recipe("助眠", server_recipe)
+
+    assert recipe.source == "fixed_library"
+
+
+@pytest.mark.asyncio
+async def test_server_recipe_over_max_total_duration_uses_fixed_library():
+    config = FakeConfig()
+    config.values["AROMA.MAX_TOTAL_SECONDS"] = 30
+
+    recipe = await AromaPlanner(config).create_recipe(
+        "\u52a9\u7720",
+        '{"stages":[{"aromas":["lavender"],"duration_seconds":31}]}',
     )
+
+    assert recipe.source == "fixed_library"
+
+
+@pytest.mark.asyncio
+async def test_server_recipe_splits_stages_when_configured_target_exceeds_stage_limit():
+    config = FakeConfig()
+    config.values["AROMA.MAX_STAGE_SECONDS"] = 600
+    config.values["AROMA.MAX_TOTAL_SECONDS"] = 1800
+    config.values["AROMA.TOTAL_DURATION_SECONDS"] = 1800
+
+    recipe = await AromaPlanner(config).create_recipe(
+        "\u52a9\u7720",
+        '{"stages":[{"aromas":["lavender"],"duration_seconds":1800}]}',
+    )
+
+    assert recipe.source == "xiaozhi_server"
+    assert [stage["duration_seconds"] for stage in recipe.stages] == [600, 600, 600]
+    assert all(stage["channel_numbers"] == [1] for stage in recipe.stages)
+
+
+@pytest.mark.asyncio
+async def test_server_recipe_non_target_total_duration_falls_back():
+    config = FakeConfig()
+    config.values["AROMA.MAX_STAGE_SECONDS"] = 600
+    config.values["AROMA.MAX_TOTAL_SECONDS"] = 1800
+
+    recipe = await AromaPlanner(config).create_recipe(
+        "\u52a9\u7720",
+        '{"stages":[{"aromas":["lavender"],"duration_seconds":31}]}',
+    )
+
+    assert recipe.source == "fixed_library"
 
 
 def test_dam1600c_uses_modbus_single_coil_frame():

@@ -11,10 +11,10 @@ def test_default_config_factory_returns_independent_nested_values():
     first = create_default_config()
     second = create_default_config()
 
-    first["AROMA"]["QWEN"]["MODEL"] = "changed-model"
+    first["AROMA"]["CHANNEL_MAP"]["lavender"] = 99
 
-    assert second["AROMA"]["QWEN"]["MODEL"] == "qwen3.6-plus"
-    assert ConfigManager.DEFAULT_CONFIG["AROMA"]["QWEN"]["MODEL"] == "qwen3.6-plus"
+    assert second["AROMA"]["CHANNEL_MAP"]["lavender"] == 1
+    assert ConfigManager.DEFAULT_CONFIG["AROMA"]["CHANNEL_MAP"]["lavender"] == 1
 
 
 def test_config_example_matches_complete_default_config():

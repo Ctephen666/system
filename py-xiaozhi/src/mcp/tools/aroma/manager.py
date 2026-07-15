@@ -41,7 +41,9 @@ class AromaManager:
             "next_action": "询问用户的情绪、场景或期望效果，再调用 aroma.start。",
         }
 
-    async def start(self, requirement: str) -> dict[str, Any]:
+    async def start(
+        self, requirement: str, server_recipe: str | dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """生成并异步启动香薰配方。"""
         if not self._mode_active:
             return self._error("not_in_mode", "请先进入香薰系统，再描述您的需求。")
@@ -63,7 +65,9 @@ class AromaManager:
         session_id = self._session_id
         self._starting_session_id = session_id
         try:
-            recipe = await self._planner.create_recipe(requirement.strip())
+            recipe = await self._planner.create_recipe(
+                requirement.strip(), server_recipe=server_recipe
+            )
         except asyncio.CancelledError:
             self._session_id += 1
             self._clear_starting(session_id)

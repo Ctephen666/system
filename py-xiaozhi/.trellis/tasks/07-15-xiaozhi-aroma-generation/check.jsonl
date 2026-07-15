@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verification checklist for lint, tests, and changed Python modules."}
+{"file": ".trellis/spec/backend/mcp-tool-pattern.md", "reason": "Verify tool discovery and JSON contract after aroma.start changes."}
+{"file": ".trellis/spec/backend/asyncio-guidelines.md", "reason": "Verify asynchronous behavior has not regressed."}
+{"file": ".trellis/tasks/07-15-xiaozhi-aroma-generation/prd.md", "reason": "Verify all user-facing acceptance criteria and scope boundaries."}

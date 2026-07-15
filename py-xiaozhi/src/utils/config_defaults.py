@@ -52,10 +52,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "models": "glm-4v-plus",
     },
     "AROMA": {
-        "ENABLED": False,
+        "ENABLED": True,
         "SERIAL_PORT": "",
         "BAUDRATE": 9600,
-        "DEVICE_ADDRESS": 1,
+        "DEVICE_ADDRESS": 254,
         "SERIAL_TIMEOUT": 1.0,
         "RETRIES": 1,
         "ACTIVE_HIGH": True,
@@ -81,13 +81,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "orange": 14,
             "frankincense": 15,
             "vanilla": 16,
-        },
-        "QWEN": {
-            "API_KEY": "",
-            "BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "MODEL": "qwen3.6-plus",
-            "CONNECT_TIMEOUT": 5.0,
-            "READ_TIMEOUT": 20.0,
         },
     },
     "SHORTCUTS": {

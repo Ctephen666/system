@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/mcp-tool-pattern.md", "reason": "Defines MCP discovery, async tool signatures, parameter conventions, and JSON responses for the altered aroma.start interface."}
+{"file": ".trellis/spec/backend/asyncio-guidelines.md", "reason": "Requires non-blocking tool execution and preserves cancellation semantics for aroma task execution."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Defines recoverable validation/fallback behavior and logging at integration boundaries."}
+{"file": ".trellis/spec/backend/python-style.md", "reason": "Style and typing conventions for planner and test changes."}
+{"file": ".trellis/tasks/07-15-xiaozhi-aroma-generation/prd.md", "reason": "Confirmed scope, acceptance criteria, security boundary, and selected architecture."}

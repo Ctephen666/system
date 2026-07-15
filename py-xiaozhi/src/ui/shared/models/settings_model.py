@@ -205,30 +205,6 @@ class SettingsModel(BaseModel):
 
     aromaPatternMode = Property(str, _get_aromaPatternMode, _set_aromaPatternMode, notify=settingsChanged)
 
-    def _get_aromaQwenBaseUrl(self) -> str:
-        return str(self._get_value("AROMA.QWEN.BASE_URL", ""))
-
-    def _set_aromaQwenBaseUrl(self, value: str):
-        self._set_value("AROMA.QWEN.BASE_URL", str(value).strip())
-
-    aromaQwenBaseUrl = Property(str, _get_aromaQwenBaseUrl, _set_aromaQwenBaseUrl, notify=settingsChanged)
-
-    def _get_aromaQwenModel(self) -> str:
-        return str(self._get_value("AROMA.QWEN.MODEL", "qwen3.6-plus"))
-
-    def _set_aromaQwenModel(self, value: str):
-        self._set_value("AROMA.QWEN.MODEL", str(value).strip())
-
-    aromaQwenModel = Property(str, _get_aromaQwenModel, _set_aromaQwenModel, notify=settingsChanged)
-
-    def _get_aromaQwenApiKey(self) -> str:
-        return str(self._get_value("AROMA.QWEN.API_KEY", ""))
-
-    def _set_aromaQwenApiKey(self, value: str):
-        self._set_value("AROMA.QWEN.API_KEY", str(value).strip())
-
-    aromaQwenApiKey = Property(str, _get_aromaQwenApiKey, _set_aromaQwenApiKey, notify=settingsChanged)
-
     def _get_aromaChannelMap(self) -> str:
         return json.dumps(self._get_value("AROMA.CHANNEL_MAP", {}), ensure_ascii=False)
 
