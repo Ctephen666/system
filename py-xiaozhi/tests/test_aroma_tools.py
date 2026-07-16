@@ -8,7 +8,7 @@ import pytest
 from src.mcp.decorators import iter_registered_mcp_tools
 from src.mcp.tools.aroma.driver import Dam1600CRelayDriver, RelaySettings
 from src.mcp.tools.aroma.manager import AromaManager
-from src.mcp.tools.aroma.planner import AromaPlanner
+from src.mcp.tools.aroma.planner import AromaPlanner, FIXED_AROMA_RECIPES
 
 
 class FakeSerial:
@@ -157,7 +157,7 @@ async def test_fixed_library_is_used_without_server_recipe():
     [
         ("\u52a9\u7720", [1, 6]),
         ("\u4e13\u6ce8", [3, 4]),
-        ("\u63d0\u795e", [5, 4]),
+        ("\u63d0\u795e", [5, 3, 4]),
         ("\u653e\u677e", [1, 2]),
     ],
 )
@@ -177,6 +177,33 @@ async def test_fixed_library_selects_common_chinese_scenes(
 
     assert recipe.source == "fixed_library"
     assert recipe.stages[0]["channel_numbers"] == expected_channels
+
+
+def test_fixed_library_covers_every_default_aroma():
+    covered_aromas = {
+        aroma_name
+        for _, aroma_names, _ in FIXED_AROMA_RECIPES
+        for aroma_name in aroma_names
+    }
+
+    assert covered_aromas == {
+        "lavender",
+        "bergamot",
+        "rosemary",
+        "lemon",
+        "peppermint",
+        "chamomile",
+        "cedarwood",
+        "eucalyptus",
+        "jasmine",
+        "rose",
+        "sandalwood",
+        "ylang_ylang",
+        "tea_tree",
+        "orange",
+        "frankincense",
+        "vanilla",
+    }
 
 
 @pytest.mark.asyncio

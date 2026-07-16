@@ -30,6 +30,72 @@ _AROMA_NAME_ALIASES = {
 }
 
 
+FIXED_AROMA_RECIPES: tuple[tuple[tuple[str, ...], tuple[str, ...], str], ...] = (
+    (
+        ("睡前", "睡觉", "失眠", "助眠", "晚安"),
+        ("lavender", "chamomile", "sandalwood"),
+        "夜间舒缓",
+    ),
+    (
+        ("放松", "压力", "焦虑", "紧张", "解压"),
+        ("lavender", "bergamot", "ylang_ylang"),
+        "放松舒缓",
+    ),
+    (
+        ("专注", "学习", "工作", "阅读", "写作"),
+        ("rosemary", "lemon", "frankincense"),
+        "清醒专注",
+    ),
+    (
+        ("早上", "晨起", "起床", "提神", "困", "精神"),
+        ("peppermint", "rosemary", "lemon"),
+        "晨间清新",
+    ),
+    (
+        ("开心", "愉快", "心情", "明亮", "阳光"),
+        ("orange", "bergamot", "jasmine"),
+        "明亮心情",
+    ),
+    (
+        ("冥想", "静心", "沉静", "瑜伽", "放空"),
+        ("sandalwood", "cedarwood", "frankincense"),
+        "静心沉稳",
+    ),
+    (
+        ("清新", "净味", "空气", "通风", "打扫"),
+        ("tea_tree", "eucalyptus", "lemon"),
+        "清新净味",
+    ),
+    (
+        ("浪漫", "约会", "花香", "温柔", "氛围"),
+        ("rose", "jasmine", "ylang_ylang"),
+        "花香暖意",
+    ),
+    (
+        ("疲劳", "加班", "下午", "休息", "重启"),
+        ("orange", "peppermint", "rosemary"),
+        "工作间隙",
+    ),
+    (
+        ("下雨", "雨天", "阴天", "宅家"),
+        ("cedarwood", "lavender", "vanilla"),
+        "雨日沉静",
+    ),
+    (
+        ("夏天", "炎热", "凉快", "清凉"),
+        ("eucalyptus", "peppermint", "lemon"),
+        "夏日清凉",
+    ),
+    (
+        ("冬天", "寒冷", "温暖", "暖和"),
+        ("orange", "vanilla", "frankincense"),
+        "冬日暖香",
+    ),
+)
+
+DEFAULT_FIXED_RECIPE = (("lavender", "bergamot"), "日常舒缓")
+
+
 @dataclass(frozen=True)
 class AromaRecipe:
     """可安全执行的香薰配方。"""
@@ -143,14 +209,8 @@ class AromaPlanner:
         self, requirement: str, channel_map: dict[str, int]
     ) -> AromaRecipe:
         text = requirement.lower()
-        recipes = (
-            (("睡", "失眠", "助眠"), ("lavender", "chamomile"), "舒缓助眠"),
-            (("专注", "学习", "工作"), ("rosemary", "lemon"), "清醒专注"),
-            (("提神", "困", "精神"), ("peppermint", "lemon"), "清新提神"),
-        )
-        names = ("lavender", "bergamot")
-        summary = "放松舒缓"
-        for keywords, candidate_names, candidate_summary in recipes:
+        names, summary = DEFAULT_FIXED_RECIPE
+        for keywords, candidate_names, candidate_summary in FIXED_AROMA_RECIPES:
             if any(keyword in text for keyword in keywords):
                 names, summary = candidate_names, candidate_summary
                 break
