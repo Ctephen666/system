@@ -119,6 +119,9 @@ class AromaManager:
             ),
             "recipe": recipe.summary,
             "source": recipe.source,
+            "roles": recipe.role_details,
+            "overall_effect": recipe.overall_effect,
+            "voice_message": recipe.voice_message,
             "message": "香薰已启动；可询问状态，或说停止香薰、退出香薰系统。",
         }
 
@@ -131,6 +134,9 @@ class AromaManager:
             "active_channels": self._active_channels,
             "current_stage": self._current_stage,
             "recipe": self._recipe.summary if self._recipe else None,
+            "roles": self._recipe.role_details if self._recipe else [],
+            "overall_effect": self._recipe.overall_effect if self._recipe else None,
+            "voice_message": self._recipe.voice_message if self._recipe else None,
             "last_error": self._last_error or None,
         }
 

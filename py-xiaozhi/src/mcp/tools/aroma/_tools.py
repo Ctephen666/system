@@ -7,6 +7,7 @@ from src.mcp.decorators import Prop, PropType, mcp_tool
 from src.utils.config_manager import ConfigManager
 
 from .manager import get_aroma_manager
+from .planner import AROMA_ROLE_CATALOG, ROLE_LABELS
 
 
 AROMA_CATALOG: dict[str, tuple[str, str]] = {
@@ -44,19 +45,22 @@ def _build_aroma_start_description(channel_map: dict[str, Any]) -> str:
     channel_lines = []
     for channel, name in channels:
         chinese_name, purpose = AROMA_CATALOG.get(name, (name, "按用户需求使用"))
+        role_key = AROMA_ROLE_CATALOG.get(name, ("",))[0]
+        role_label = ROLE_LABELS.get(role_key, "未分类")
         channel_lines.append(
-            f"通道 {channel}：{chinese_name}（{name}；{purpose}）"
+            f"通道 {channel}：{role_label} / {chinese_name}（{name}；{purpose}）"
         )
     available_channels = "\n".join(channel_lines) or "当前未配置可用香型。"
     return (
         "仅在已进入香薰模式后调用。用 requirement 传递用户原意；"
         "必须优先通过 recipe 传入 JSON 配方："
-        '{"summary":"简短中文摘要","stages":[{"aromas":["香型名称"],'
-        '"duration_seconds":30}]}。所有阶段总时长必须恰好为 30 秒，'
-        "优先只输出一个 30 秒阶段，绝不可输出 1800 秒等长配方。"
-        "只能使用下列当前客户端已配置的中文名或 canonical 名，不能编造其他香型；"
+        '{"summary":"简短中文摘要","overall_effect":"整体香气体验", "duration_seconds":30,'
+        '"roles":{"jun":"君香名称","chen":"臣香名称","zuo":"佐香名称","shi":"使香名称"}}。'
+        "必须一君、一臣、一佐、一使，恰好四路且总时长恰好为 30 秒。"
+        "只能为每个角色使用下列同角色的中文名或 canonical 名，不能编造其他香型；"
         "客户端会根据通道映射执行并校验方案：\n"
         f"{available_channels}\n"
+        "工具返回的 overall_effect 和 voice_message 已说明整体香气体验与君臣佐使角色；收到结果后必须向用户朗读或转述它。"
         "recipe 缺失或无效时，客户端将从固定安全配方库中兜底选择。"
     )
 
